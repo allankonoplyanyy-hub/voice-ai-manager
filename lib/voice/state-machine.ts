@@ -25,8 +25,12 @@ export const ALLOWED_TRANSITIONS: Record<CallState, CallState[]> = {
   received: ["greeting", "no_answer", "provider_failed", "abandoned"],
   greeting: ["consent", ...ALT_FROM_ACTIVE],
   consent: ["identifying_intent", "rejected", ...ALT_FROM_ACTIVE],
-  identifying_intent: ["consulting", "qualifying", ...ALT_FROM_ACTIVE],
-  consulting: ["qualifying", "consulting", "identifying_intent", ...ALT_FROM_ACTIVE],
+  // lead_capture напрямую: клиент сам называет контакты сразу после определения намерения
+  identifying_intent: ["consulting", "qualifying", "lead_capture", ...ALT_FROM_ACTIVE],
+  // follow_up напрямую из consulting: консультация существующего клиента без сбора лида
+  // lead_capture напрямую из consulting: контакты собираются сразу после консультации
+  // follow_up/completed напрямую: консультация существующего клиента без сбора лида
+  consulting: ["qualifying", "lead_capture", "consulting", "identifying_intent", "follow_up", "completed", ...ALT_FROM_ACTIVE],
   qualifying: ["lead_capture", "consulting", ...ALT_FROM_ACTIVE],
   lead_capture: ["booking", "follow_up", ...ALT_FROM_ACTIVE],
   booking: ["follow_up", "completed", ...ALT_FROM_ACTIVE],
