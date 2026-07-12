@@ -22,7 +22,7 @@ const ALT_FROM_ACTIVE: CallState[] = [
 ]
 
 export const ALLOWED_TRANSITIONS: Record<CallState, CallState[]> = {
-  received: ["greeting", "no_answer", "provider_failed", "abandoned"],
+  received: ["greeting", "no_answer", "provider_failed", "abandoned", "cost_limit_reached"],
   greeting: ["consent", ...ALT_FROM_ACTIVE],
   consent: ["identifying_intent", "rejected", ...ALT_FROM_ACTIVE],
   // lead_capture напрямую: клиент сам называет контакты сразу после определения намерения

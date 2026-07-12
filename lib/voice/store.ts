@@ -38,6 +38,7 @@ const SEED_SCHEDULE: { scenarioId: string; daysAgo: number; hour: number }[] = [
   { scenarioId: "ask-manager", daysAgo: 4, hour: 14 },
   { scenarioId: "crm-failure", daysAgo: 5, hour: 9 },
   { scenarioId: "calendar-failure", daysAgo: 6, hour: 10 },
+  { scenarioId: "manager-unavailable", daysAgo: 6, hour: 17 },
   // 8–30 дней
   { scenarioId: "school-enroll", daysAgo: 8, hour: 10 },
   { scenarioId: "clinic-appointment", daysAgo: 10, hour: 11 },

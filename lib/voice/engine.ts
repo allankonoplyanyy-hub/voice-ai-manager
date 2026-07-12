@@ -1,3 +1,4 @@
+import { signPayload } from "./security"
 import { assertTransition } from "./state-machine"
 import type {
   Booking,
@@ -23,15 +24,6 @@ export interface ScenarioRunResult {
 
 const AVG_STEP_SEC = 14
 
-function mockSignature(payload: string): string {
-  // Демонстрационная «подпись» — не криптография. Live-режим будет использовать HMAC-SHA256.
-  let h = 0
-  for (let i = 0; i < payload.length; i++) {
-    h = (h * 31 + payload.charCodeAt(i)) >>> 0
-  }
-  return `mock-sig-${h.toString(16)}`
-}
-
 function intentFromScenario(s: DemoScenario): string {
   const map: Record<string, string> = {
     "school-enroll": "Запись в 1 класс",
@@ -47,6 +39,7 @@ function intentFromScenario(s: DemoScenario): string {
     "no-slots": "Маникюр (лист ожидания)",
     "crm-failure": "Замена масла",
     "calendar-failure": "Запись на УЗИ",
+    "manager-unavailable": "Банкет: свадьба на 120 гостей",
   }
   return map[s.id] ?? s.title
 }
@@ -59,10 +52,16 @@ function scoreForScenario(s: DemoScenario): { score: number; temperature: Lead["
   return { score: 30, temperature: "cold" }
 }
 
+export interface RunOptions {
+  /** Cost guard: лимит стоимости звонка в тенге. При превышении звонок завершается cost_limit_reached. */
+  maxCallCostTenge?: number
+}
+
 export function runScenario(
   scenario: DemoScenario,
   startedAt: Date,
   runId: string,
+  options: RunOptions = {},
 ): ScenarioRunResult {
   const callId = `call-${scenario.id}-${runId}`
   const providerCallId = `prov-${runId}`
@@ -111,12 +110,33 @@ export function runScenario(
       timestamp,
       idempotencyKey,
       payload,
-      signature: mockSignature(idempotencyKey),
+      // HMAC-SHA256 по контракту voice-ai.v1 (см. lib/voice/contract.ts)
+      signature: signPayload(JSON.stringify(payload), timestamp),
     })
   }
 
+  let accumulatedCost = 0
+
   for (const [i, step] of scenario.steps.entries()) {
     stepTime += AVG_STEP_SEC * 1000
+    accumulatedCost += Math.round(AVG_STEP_SEC * 0.35)
+
+    // Cost guard: превышение лимита → терминальное состояние, диалог прерывается
+    if (options.maxCallCostTenge !== undefined && accumulatedCost > options.maxCallCostTenge && currentState !== "cost_limit_reached") {
+      assertTransition(currentState, "cost_limit_reached")
+      call.transitions.push({
+        from: currentState,
+        to: "cost_limit_reached",
+        at: new Date(stepTime).toISOString(),
+        note: `Cost guard: превышен лимит ${options.maxCallCostTenge} тг`,
+      })
+      currentState = "cost_limit_reached"
+      call.outcome = "failed"
+      call.costTenge = accumulatedCost
+      call.durationSec = (i + 1) * AVG_STEP_SEC
+      pushEvent("voice.call.failed", { reason: "cost_limit_reached", costTenge: accumulatedCost })
+      break
+    }
 
     // Переход состояния
     if (step.toState && step.toState !== currentState) {

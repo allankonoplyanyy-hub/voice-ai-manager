@@ -22,7 +22,7 @@ export default function IntegrationsPage() {
               <div className="flex items-center justify-between gap-2">
                 <h2 className="text-sm font-semibold">{a.kindLabel}</h2>
                 <span className="rounded-md bg-gold/15 px-2 py-0.5 text-xs font-medium text-gold">
-                  Mock-режим
+                  Mock
                 </span>
               </div>
               <p className="font-mono text-xs text-muted-foreground">{a.name}</p>
@@ -32,9 +32,17 @@ export default function IntegrationsPage() {
                   <dt className="shrink-0 font-medium text-muted-foreground">Сейчас:</dt>
                   <dd>{a.mockProvider}</dd>
                 </div>
-                <div className="flex gap-2">
-                  <dt className="shrink-0 font-medium text-muted-foreground">Live (не активировано):</dt>
-                  <dd className="text-muted-foreground">{a.liveProviders.join(", ")}</dd>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <dt className="shrink-0 font-medium text-muted-foreground">Live:</dt>
+                  {a.liveProviders.map((p) => (
+                    <dd
+                      key={p}
+                      className="flex items-center gap-1 rounded-md border border-border px-1.5 py-0.5 text-muted-foreground"
+                    >
+                      {p}
+                      <span className="text-[10px] uppercase tracking-wide opacity-70">Not connected</span>
+                    </dd>
+                  ))}
                 </div>
               </dl>
             </article>

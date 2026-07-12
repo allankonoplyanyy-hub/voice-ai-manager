@@ -72,7 +72,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </span>
       <span className="flex flex-col leading-tight">
         <span className="text-sm font-semibold text-foreground">Voice AI Manager</span>
-        <span className="text-xs text-muted-foreground">Demo-режим</span>
+        <span className="text-xs font-semibold uppercase tracking-wide text-gold">Demo</span>
       </span>
     </Link>
   )
@@ -107,6 +107,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {mobileOpen && (
           <div className="border-b border-border bg-sidebar p-3 md:hidden">{nav}</div>
         )}
+        {/* Заметная demo-метка: видна на всех экранах, включая mobile */}
+        <div
+          role="status"
+          className="flex items-center gap-2 border-b border-gold/30 bg-gold/10 px-4 py-2 md:px-8"
+        >
+          <span className="rounded-md bg-gold px-2 py-0.5 text-xs font-bold uppercase tracking-wide text-gold-foreground">
+            Demo
+          </span>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Демонстрационный симулятор: звонки имитируются, телефония и внешние API не подключены.
+          </p>
+        </div>
         <main className="min-w-0 flex-1 px-4 py-6 md:px-8 md:py-8">
           <div className="mx-auto w-full max-w-6xl">{children}</div>
         </main>
