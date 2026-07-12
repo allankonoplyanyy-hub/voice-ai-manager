@@ -16,7 +16,6 @@ export interface VoiceStore {
 }
 
 declare global {
-  // eslint-disable-next-line no-var
   var __voiceStore: VoiceStore | undefined
 }
 

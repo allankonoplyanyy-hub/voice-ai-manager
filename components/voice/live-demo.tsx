@@ -47,7 +47,15 @@ export function LiveDemo({
     setSaving(false)
   }, [])
 
-  useEffect(() => reset(), [selectedId, reset])
+  // Сброс выполняется в selectScenario (обработчик клика), а не в эффекте
+  const selectScenario = useCallback(
+    (id: string) => {
+      setSelectedId(id)
+      reset()
+    },
+    [reset],
+  )
+
   useEffect(() => () => {
     if (timerRef.current) clearTimeout(timerRef.current)
   }, [])
@@ -108,7 +116,7 @@ export function LiveDemo({
               <li key={s.id}>
                 <button
                   type="button"
-                  onClick={() => setSelectedId(s.id)}
+                  onClick={() => selectScenario(s.id)}
                   aria-pressed={selectedId === s.id}
                   className={cn(
                     "w-full rounded-xl border p-3 text-left transition-colors",
