@@ -1,6 +1,10 @@
 import { AppShell } from "@/components/app-shell"
 import { OverviewDashboard } from "@/components/voice/overview-dashboard"
 
+// Дашборд читает звонки из базы. Без этого Next пререндерил бы страницу на
+// сборке и показывал бы данные, замороженные на момент деплоя.
+export const dynamic = "force-dynamic"
+
 export default function Page() {
   return (
     <AppShell>

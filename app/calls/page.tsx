@@ -5,6 +5,9 @@ import { DEMO_TENANTS } from "@/lib/voice/tenants"
 
 export const metadata = { title: "Звонки — AAA Voice AI Manager" }
 
+// Список читается из базы: без этого новый звонок не появился бы до пересборки.
+export const dynamic = "force-dynamic"
+
 export default async function CallsPage() {
   await ensureSeeded()
   const calls = (await listAllCalls()).map((c) => ({

@@ -9,7 +9,6 @@ const NOW = new Date("2026-08-05T12:00:00.000Z")
 
 function call(overrides: Partial<VoiceCall> & { callId: string }): VoiceCall {
   return {
-    callId: overrides.callId,
     companyId: "co",
     providerCallId: `prov-${overrides.callId}`,
     clientName: "Клиент",

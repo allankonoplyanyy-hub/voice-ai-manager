@@ -5,6 +5,9 @@ import { getTenant } from "@/lib/voice/tenants"
 
 export const metadata = { title: "Календарь — AAA Voice AI Manager" }
 
+// Записи читаются из базы, поэтому пререндер на сборке недопустим.
+export const dynamic = "force-dynamic"
+
 const MONTHS_RU = [
   "января",
   "февраля",

@@ -7,15 +7,32 @@ import * as schema from "./schema"
 const globalForDb = globalThis as unknown as { voicePool?: Pool }
 
 function createPool() {
-  const connectionString = process.env.DATABASE_URL
-  if (!connectionString) {
+  const raw = process.env.DATABASE_URL
+  if (!raw) {
     throw new Error("DATABASE_URL не задан — база данных недоступна")
   }
-  return new Pool({ connectionString, max: 10, idleTimeoutMillis: 30_000 })
+
+  // sslmode из строки подключения убирается, а TLS задаётся явно.
+  // Причина: pg трактует sslmode=require как verify-full, но в pg v9 семантика
+  // станет слабее (без проверки цепочки и хоста). Явный rejectUnauthorized
+  // фиксирует полную проверку сертификата и снимает предупреждение о переходе.
+  const url = new URL(raw)
+  url.searchParams.delete("sslmode")
+  url.searchParams.delete("uselibpqcompat")
+
+  return new Pool({
+    connectionString: url.toString(),
+    ssl: { rejectUnauthorized: true },
+    max: 10,
+    idleTimeoutMillis: 30_000,
+  })
 }
 
 export const pool = globalForDb.voicePool ?? createPool()
-if (process.env.NODE_ENV !== "production") globalForDb.voicePool = pool
+// Кэш нужен только dev-серверу с HMR. В тестах он вреден: между файлами Vitest
+// сбрасывает модули, но globalThis сохраняется, поэтому файл, закрывший пул
+// через pool.end(), оставлял бы следующему файлу уже закрытое соединение.
+if (process.env.NODE_ENV === "development") globalForDb.voicePool = pool
 
 export const db = drizzle(pool, { schema })
 

@@ -6,6 +6,10 @@ import { DEMO_TENANTS } from "@/lib/voice/tenants"
 
 export const metadata = { title: "Аналитика — AAA Voice AI Manager" }
 
+// Метрики считаются из базы: страница обязана рендериться на каждый запрос,
+// иначе показывала бы срез на момент сборки.
+export const dynamic = "force-dynamic"
+
 export default async function AnalyticsPage() {
   await ensureSeeded()
   // Данные читаются один раз, метрики считаются в памяти: так по компаниям не

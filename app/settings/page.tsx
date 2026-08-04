@@ -7,6 +7,11 @@ import { currentPreflight } from "@/lib/voice/runtime"
 
 export const metadata = { title: "Настройки — AAA Voice AI Manager" }
 
+// Страница показывает наличие секретов и фактический режим работы. При
+// пререндере эти значения зафиксировались бы на моменте сборки, и добавленный
+// позже секрет продолжал бы отображаться как отсутствующий.
+export const dynamic = "force-dynamic"
+
 export default async function SettingsPage() {
   await ensureSeeded()
   const counters = await storeCounters()
