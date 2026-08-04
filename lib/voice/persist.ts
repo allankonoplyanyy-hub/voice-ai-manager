@@ -404,15 +404,28 @@ export async function listCallsByCompany(companyId: string, limit = 200): Promis
   return rows.map((r) => rowToCall(r))
 }
 
-/** Звонок целиком: с переходами, транскриптом и связанными артефактами. */
-export async function getCallDetail(callId: string): Promise<{
+/**
+ * Звонок целиком: с переходами, транскриптом и связанными артефактами.
+ *
+ * companyId обязателен: без него владелец ссылки на чужой звонок мог бы
+ * открыть транскрипт и телефон клиента другой компании. Звонок, не
+ * принадлежащий указанной компании, для неё просто не существует.
+ */
+export async function getCallDetail(
+  callId: string,
+  companyId: string,
+): Promise<{
   call: VoiceCall
   lead: Lead | null
   booking: Booking | null
   followUps: FollowUp[]
   events: VoiceEvent[]
 } | null> {
-  const rows = await db.select().from(voiceCalls).where(eq(voiceCalls.callId, callId)).limit(1)
+  const rows = await db
+    .select()
+    .from(voiceCalls)
+    .where(and(eq(voiceCalls.callId, callId), eq(voiceCalls.companyId, companyId)))
+    .limit(1)
   const row = rows[0]
   if (!row) return null
 
@@ -499,8 +512,28 @@ export async function listAllBookings(limit = 200): Promise<Booking[]> {
   return rows.map(rowToBooking)
 }
 
+export async function listBookingsByCompany(companyId: string, limit = 200): Promise<Booking[]> {
+  const rows = await db
+    .select()
+    .from(voiceBookings)
+    .where(eq(voiceBookings.companyId, companyId))
+    .orderBy(desc(voiceBookings.createdAt))
+    .limit(limit)
+  return rows.map(rowToBooking)
+}
+
 export async function listAllFollowUps(limit = 200): Promise<FollowUp[]> {
   const rows = await db.select().from(voiceFollowUps).orderBy(desc(voiceFollowUps.createdAt)).limit(limit)
+  return rows.map(rowToFollowUp)
+}
+
+export async function listFollowUpsByCompany(companyId: string, limit = 200): Promise<FollowUp[]> {
+  const rows = await db
+    .select()
+    .from(voiceFollowUps)
+    .where(eq(voiceFollowUps.companyId, companyId))
+    .orderBy(desc(voiceFollowUps.createdAt))
+    .limit(limit)
   return rows.map(rowToFollowUp)
 }
 
@@ -512,6 +545,7 @@ export async function listAllFollowUps(limit = 200): Promise<FollowUp[]> {
  */
 export async function callSummaries(
   callIds: string[],
+  companyId: string,
 ): Promise<Map<string, { clientName: string | null; clientPhone: string }>> {
   if (callIds.length === 0) return new Map()
   const rows = await db
@@ -521,14 +555,22 @@ export async function callSummaries(
       clientPhone: voiceCalls.clientPhone,
     })
     .from(voiceCalls)
-    .where(inArray(voiceCalls.callId, callIds))
+    .where(and(inArray(voiceCalls.callId, callIds), eq(voiceCalls.companyId, companyId)))
   return new Map(rows.map((r) => [r.callId, { clientName: r.clientName, clientPhone: r.clientPhone }]))
 }
 
-/** Follow-up для набора звонков одним запросом — чтобы не плодить N+1. */
-export async function followUpsForCalls(callIds: string[]): Promise<FollowUp[]> {
+/**
+ * Follow-up для набора звонков одним запросом — чтобы не плодить N+1.
+ *
+ * Фильтр по компании обязателен: список callId приходит из внешнего запроса, и
+ * без него подставленный чужой идентификатор вернул бы данные другой компании.
+ */
+export async function followUpsForCalls(callIds: string[], companyId: string): Promise<FollowUp[]> {
   if (callIds.length === 0) return []
-  const rows = await db.select().from(voiceFollowUps).where(inArray(voiceFollowUps.callId, callIds))
+  const rows = await db
+    .select()
+    .from(voiceFollowUps)
+    .where(and(inArray(voiceFollowUps.callId, callIds), eq(voiceFollowUps.companyId, companyId)))
   return rows.map(rowToFollowUp)
 }
 

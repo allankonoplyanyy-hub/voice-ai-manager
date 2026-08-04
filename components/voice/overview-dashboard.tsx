@@ -1,8 +1,13 @@
 import Link from "next/link"
 import { ArrowRight, CalendarCheck, Phone, PhoneForwarded, Timer, TrendingUp, Users } from "lucide-react"
 import { computeMetrics } from "@/lib/voice/analytics"
-import { ensureSeeded, listAllCalls, listAllFollowUps, listAllLeads } from "@/lib/voice/persist"
-import { DEMO_TENANTS, getTenant } from "@/lib/voice/tenants"
+import {
+  ensureSeeded,
+  listCallsByCompany,
+  listFollowUpsByCompany,
+  listLeadsByCompany,
+} from "@/lib/voice/persist"
+import { getTenant } from "@/lib/voice/tenants"
 import { OutcomeBadge, StateBadge, formatDateTime, formatDuration } from "@/components/voice/badges"
 
 function StatCard({
@@ -28,12 +33,14 @@ function StatCard({
   )
 }
 
-export async function OverviewDashboard() {
+export async function OverviewDashboard({ companyId }: { companyId: string }) {
   await ensureSeeded()
+  // Каждая выборка ограничена компанией пользователя: сводка по всем компаниям
+  // сразу раскрывала бы данные других клиентов.
   const [calls, leads, followUps] = await Promise.all([
-    listAllCalls(),
-    listAllLeads(),
-    listAllFollowUps(),
+    listCallsByCompany(companyId),
+    listLeadsByCompany(companyId),
+    listFollowUpsByCompany(companyId),
   ])
   const today = computeMetrics("today", calls, followUps)
   const week = computeMetrics("7d", calls, followUps)
@@ -45,7 +52,7 @@ export async function OverviewDashboard() {
       <header className="flex flex-col gap-1">
         <h1 className="text-2xl font-semibold text-balance">Обзор</h1>
         <p className="text-sm text-muted-foreground">
-          Голосовой AI-администратор: сводка по всем компаниям за сегодня и 7 дней.
+          Сводка по звонкам вашей компании за сегодня и последние 7 дней.
         </p>
       </header>
 
@@ -134,23 +141,6 @@ export async function OverviewDashboard() {
         </section>
       </div>
 
-      <section aria-label="Компании" className="flex flex-col gap-3">
-        <h2 className="text-sm font-medium text-muted-foreground">Подключённые компании ({DEMO_TENANTS.length})</h2>
-        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-          {DEMO_TENANTS.map((t) => (
-            <Link
-              key={t.companyId}
-              href={`/assistants#${t.companyId}`}
-              className="flex flex-col gap-1 rounded-xl border border-border bg-card p-4 hover:border-gold/50 transition-colors"
-            >
-              <span className="text-sm font-medium">{t.name}</span>
-              <span className="text-xs text-muted-foreground">
-                {t.industry} · {t.phoneNumber}
-              </span>
-            </Link>
-          ))}
-        </div>
-      </section>
     </div>
   )
 }

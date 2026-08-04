@@ -1,11 +1,23 @@
 import { NextResponse } from "next/server"
-import { DEMO_TENANTS } from "@/lib/voice/tenants"
+import { authenticateRequest } from "@/lib/api-auth"
+import { getTenant } from "@/lib/voice/tenants"
 
+/**
+ * Раньше отдавался весь список компаний с названиями и номерами. Теперь
+ * возвращается только своя компания — перечень клиентов сервиса наружу не нужен.
+ */
 export async function GET() {
-  return NextResponse.json({ tenants: DEMO_TENANTS })
+  const { ctx, response } = await authenticateRequest()
+  if (response) return response
+
+  const tenant = getTenant(ctx.companyId)
+  return NextResponse.json({ tenants: tenant ? [tenant] : [] })
 }
 
 export async function POST(request: Request) {
+  const { response } = await authenticateRequest()
+  if (response) return response
+
   const body = await request.json().catch(() => null)
   if (!body?.companyId || !body?.name) {
     return NextResponse.json(

@@ -10,7 +10,6 @@ export const metadata: Metadata = {
   title: 'AAA Voice AI Manager',
   description:
     'Цифровой голосовой сотрудник для бизнеса: приём звонков, консультации, лиды, записи и аналитика. Demo-режим без телефонии.',
-  generator: 'v0.app',
 }
 
 export const viewport: Viewport = {

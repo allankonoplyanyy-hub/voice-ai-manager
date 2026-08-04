@@ -33,7 +33,7 @@ async function checkDatabase(): Promise<DependencyStatus> {
     return { name: "database", ok: true, detail: "доступна", latencyMs: Date.now() - started }
   } catch (error) {
     // Текст ошибки драйвера может содержать хост и пользователя — наружу не отдаём.
-    console.log("[v0] health: сбой проверки БД:", error instanceof Error ? error.message : String(error))
+    console.log("[voice] health: сбой проверки БД:", error instanceof Error ? error.message : String(error))
     return { name: "database", ok: false, detail: "недоступна", latencyMs: Date.now() - started }
   }
 }

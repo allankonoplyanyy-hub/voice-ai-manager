@@ -87,5 +87,5 @@ export function redactObject(input: unknown, depth = 0): unknown {
 
 /** Структурированный лог с автоматической редакцией. */
 export function safeLog(event: string, data: Record<string, unknown>): void {
-  console.log(`[v0] ${event}`, JSON.stringify(redactObject(data)))
+  console.log(`[voice] ${event}`, JSON.stringify(redactObject(data)))
 }

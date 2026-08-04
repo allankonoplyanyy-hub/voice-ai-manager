@@ -1,18 +1,25 @@
 import { NextResponse } from "next/server"
+import { authenticateRequest } from "@/lib/api-auth"
 import { runScenario } from "@/lib/voice/engine"
 import { TurnTimer, checkBudgets } from "@/lib/voice/latency"
-import { ensureCompanies, ensureSeeded, listAllCalls, persistRun } from "@/lib/voice/persist"
+import { ensureCompanies, ensureSeeded, listCallsByCompany, persistRun } from "@/lib/voice/persist"
 import { safeLog } from "@/lib/voice/redaction"
 import { effectiveMode } from "@/lib/voice/runtime"
 import { getScenario } from "@/lib/voice/scenarios"
 
 export async function GET() {
+  const { ctx, response } = await authenticateRequest()
+  if (response) return response
+
   await ensureSeeded()
-  return NextResponse.json({ calls: await listAllCalls() })
+  return NextResponse.json({ calls: await listCallsByCompany(ctx.companyId) })
 }
 
 // Запуск demo-звонка по сценарию. Внешние API не вызываются.
 export async function POST(request: Request) {
+  const { response } = await authenticateRequest()
+  if (response) return response
+
   const body = await request.json().catch(() => null)
   const scenarioId = body?.scenarioId as string | undefined
   if (!scenarioId) {

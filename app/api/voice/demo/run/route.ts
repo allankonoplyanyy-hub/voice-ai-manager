@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { authenticateRequest } from "@/lib/api-auth"
 import { runScenario } from "@/lib/voice/engine"
 import { ensureCompanies, persistRun } from "@/lib/voice/persist"
 import { getScenario } from "@/lib/voice/scenarios"
@@ -6,6 +7,11 @@ import { getScenario } from "@/lib/voice/scenarios"
 // Запускает demo-сценарий «вживую»: прогоняет через движок и сохраняет
 // звонок, лид, запись, follow-up в БД, а события — в outbox.
 export async function POST(request: Request) {
+  // Запуск пишет звонки в базу и ставит события в очередь доставки — анонимно
+  // такое допускать нельзя.
+  const { response } = await authenticateRequest()
+  if (response) return response
+
   const body = (await request.json().catch(() => null)) as { scenarioId?: string } | null
   if (!body?.scenarioId) {
     return NextResponse.json({ error: "scenarioId обязателен" }, { status: 400 })

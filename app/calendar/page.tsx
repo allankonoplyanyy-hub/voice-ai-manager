@@ -1,6 +1,7 @@
 import { CalendarCheck } from "lucide-react"
 import { AppShell } from "@/components/app-shell"
-import { callSummaries, ensureSeeded, listAllBookings } from "@/lib/voice/persist"
+import { requirePageAuth } from "@/lib/require-page-auth"
+import { callSummaries, ensureSeeded, listBookingsByCompany } from "@/lib/voice/persist"
 import { getTenant } from "@/lib/voice/tenants"
 
 export const metadata = { title: "Календарь — AAA Voice AI Manager" }
@@ -33,10 +34,14 @@ function formatBookingDate(date: string): string {
 }
 
 export default async function CalendarPage() {
+  const { companyId } = await requirePageAuth()
   await ensureSeeded()
-  const bookings = await listAllBookings()
+  const bookings = await listBookingsByCompany(companyId)
   // Имена клиентов одним запросом вместо выборки на каждую запись.
-  const clients = await callSummaries(bookings.map((b) => b.callId))
+  const clients = await callSummaries(
+    bookings.map((b) => b.callId),
+    companyId,
+  )
 
   return (
     <AppShell>

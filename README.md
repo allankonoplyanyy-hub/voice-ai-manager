@@ -1,33 +1,67 @@
-# voice-ai-manager
+# AAA Voice AI Manager
 
-This is a [Next.js](https://nextjs.org) project bootstrapped with [v0](https://v0.app).
+Цифровой голосовой сотрудник для бизнеса: принимает звонки, консультирует по базе знаний,
+фиксирует заявки, записывает на приём и собирает аналитику по разговорам.
 
-## Built with v0
+## Возможности
 
-This repository is linked to a [v0](https://v0.app) project. You can continue developing by visiting the link below -- start new chats to make changes, and v0 will push commits directly to this repo. Every merge to `main` will automatically deploy.
+- Приём и ведение диалога с распознаванием намерения клиента
+- Ответы по базе знаний компании с версионированием документов
+- Создание заявок и запись на приём с удержанием слота
+- Передача разговора живому оператору по критическим словам
+- Аналитика: конверсия в заявки, неотвеченные вопросы, стоимость и длительность звонков
+- Доставка событий во внешние системы через очередь с повторными попытками
 
-[Continue working on v0 →](https://v0.app/chat/projects/prj_cHvHebBjWsO6ecpumdniAbFlDTds)
+## Технологии
 
-## Getting Started
+- Next.js 16 (App Router), React 19, TypeScript
+- PostgreSQL (Neon) + Drizzle ORM
+- Better Auth — вход по email и паролю
+- Tailwind CSS v4, shadcn/ui
+- Vitest — юнит- и интеграционные тесты
 
-First, run the development server:
+## Запуск
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
+pnpm install
 pnpm dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Приложение откроется на [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Переменные окружения
 
-## Learn More
+| Переменная             | Назначение                                      |
+| ---------------------- | ----------------------------------------------- |
+| `DATABASE_URL`         | Подключение к PostgreSQL                        |
+| `BETTER_AUTH_SECRET`   | Секрет подписи сессий, минимум 32 символа       |
+| `VOICE_WEBHOOK_SECRET` | Проверка подписи входящих вебхуков от телефонии |
 
-To learn more, take a look at the following resources:
+Секрет для сессий генерируется так:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-- [v0 Documentation](https://v0.app/docs) - learn about v0 and how to use it.
+```bash
+openssl rand -base64 32
+```
+
+## Тесты
+
+```bash
+pnpm test
+```
+
+## Режимы работы
+
+- **demo** — диалоги проигрываются по сценариям, телефония и платные API не используются
+- **live** — реальные звонки через провайдера телефонии
+
+Режим задаётся для каждой компании отдельно в её настройках.
+
+## Структура
+
+```
+app/                Страницы и HTTP-маршруты
+components/voice/   Интерфейс: звонки, аналитика, календарь, база знаний
+lib/voice/          Логика диалога, сценарии, аналитика, доставка событий
+lib/db/             Схема и подключение к базе
+tests/              Юнит- и интеграционные тесты
+```

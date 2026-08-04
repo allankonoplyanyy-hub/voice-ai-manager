@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { NextResponse } from "next/server"
+import { authenticateRequest } from "@/lib/api-auth"
 import { db } from "@/lib/db"
 import { voiceFollowUps } from "@/lib/db/schema"
 import { getCallDetail } from "@/lib/voice/persist"
@@ -13,8 +14,11 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ callId: string }> },
 ) {
+  const { ctx, response } = await authenticateRequest()
+  if (response) return response
+
   const { callId } = await params
-  const detail = await getCallDetail(callId)
+  const detail = await getCallDetail(callId, ctx.companyId)
   if (!detail) {
     return NextResponse.json({ error: "Звонок не найден" }, { status: 404 })
   }

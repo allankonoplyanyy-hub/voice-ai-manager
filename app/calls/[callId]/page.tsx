@@ -3,14 +3,20 @@ import { notFound } from "next/navigation"
 import { ArrowLeft } from "lucide-react"
 import { AppShell } from "@/components/app-shell"
 import { CallDetail } from "@/components/voice/call-detail"
+import { requirePageAuth } from "@/lib/require-page-auth"
 import { getCallDetail } from "@/lib/voice/persist"
 import { getTenant } from "@/lib/voice/tenants"
 
 export const metadata = { title: "Карточка звонка — AAA Voice AI Manager" }
 
+export const dynamic = "force-dynamic"
+
 export default async function CallPage({ params }: { params: Promise<{ callId: string }> }) {
+  const { companyId } = await requirePageAuth()
   const { callId } = await params
-  const detail = await getCallDetail(callId)
+  // Звонок чужой компании для текущего пользователя не существует: возвращается
+  // та же «страница не найдена», что и для несуществующего звонка.
+  const detail = await getCallDetail(callId, companyId)
   if (!detail) notFound()
 
   const { call, lead, booking, followUps, events } = detail
