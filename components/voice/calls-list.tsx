@@ -126,7 +126,7 @@ export function CallsList({
                 </span>
               </div>
               {/* при handoff state и outcome дублируют друг друга — показываем только один бейдж */}
-              {!(c.state === "handoff" && c.outcome === "handoff") && <StateBadge state={c.state} />}
+              {!(c.state === "manager_handoff" && c.outcome === "handoff") && <StateBadge state={c.state} />}
               <OutcomeBadge outcome={c.outcome} />
               <span className="text-xs tabular-nums text-muted-foreground">{formatDuration(c.durationSec)}</span>
               <span className="text-xs tabular-nums text-muted-foreground">{formatDateTime(c.startedAt)}</span>

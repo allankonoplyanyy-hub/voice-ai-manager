@@ -1,0 +1,40 @@
+import { drizzle } from "drizzle-orm/node-postgres"
+import { Pool } from "pg"
+import * as schema from "./schema"
+
+// Один пул на процесс. В dev Next.js перезагружает модули, поэтому кэшируем в globalThis,
+// иначе каждый HMR-цикл открывает новый пул и Neon упирается в лимит соединений.
+const globalForDb = globalThis as unknown as { voicePool?: Pool }
+
+function createPool() {
+  const connectionString = process.env.DATABASE_URL
+  if (!connectionString) {
+    throw new Error("DATABASE_URL не задан — база данных недоступна")
+  }
+  return new Pool({ connectionString, max: 10, idleTimeoutMillis: 30_000 })
+}
+
+export const pool = globalForDb.voicePool ?? createPool()
+if (process.env.NODE_ENV !== "production") globalForDb.voicePool = pool
+
+export const db = drizzle(pool, { schema })
+
+/** Есть ли вообще сконфигурированная база. Используется health-чеком и режимами. */
+export function isDatabaseConfigured(): boolean {
+  return Boolean(process.env.DATABASE_URL)
+}
+
+/** Пинг базы для readiness-проб. Не бросает исключение. */
+export async function pingDatabase(): Promise<{ ok: boolean; latencyMs: number; error?: string }> {
+  const start = Date.now()
+  try {
+    await pool.query("SELECT 1")
+    return { ok: true, latencyMs: Date.now() - start }
+  } catch (error) {
+    return {
+      ok: false,
+      latencyMs: Date.now() - start,
+      error: error instanceof Error ? error.message : "unknown error",
+    }
+  }
+}
