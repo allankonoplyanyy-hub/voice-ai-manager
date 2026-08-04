@@ -175,7 +175,7 @@ describe("persistRun — запись артефактов", () => {
   it("пишет звонок со всеми связанными сущностями", async () => {
     await persistRun(makeRun({ callId: "c1", withBooking: true, followUpCount: 2 }))
 
-    const detail = await getCallDetail("c1")
+    const detail = await getCallDetail("c1", CO)
     expect(detail).not.toBeNull()
     expect(detail!.call.callId).toBe("c1")
     expect(detail!.call.summary).toBe("Клиент записан")
@@ -191,7 +191,7 @@ describe("persistRun — запись артефактов", () => {
       makeRun({ callId: "c_bare", withLead: false, followUpCount: 0, eventKeys: [] }),
     )
 
-    const detail = await getCallDetail("c_bare")
+    const detail = await getCallDetail("c_bare", CO)
     expect(detail!.lead).toBeNull()
     expect(detail!.booking).toBeNull()
     expect(detail!.followUps).toEqual([])
@@ -200,7 +200,7 @@ describe("persistRun — запись артефактов", () => {
   it("переносит массивы и необязательные поля без потерь", async () => {
     await persistRun(makeRun({ callId: "c_arrays" }))
 
-    const detail = await getCallDetail("c_arrays")
+    const detail = await getCallDetail("c_arrays", CO)
     expect(detail!.call.unansweredQuestions).toEqual(["Есть ли рассрочка?"])
     expect(detail!.call.errors).toEqual([])
     expect(detail!.call.handoff).toBeNull()
@@ -222,7 +222,7 @@ describe("persistRun — идемпотентность", () => {
     await persistRun(run)
     await persistRun(run)
 
-    const detail = await getCallDetail("c_dup")
+    const detail = await getCallDetail("c_dup", CO)
     // Главное: дочерние строки не удвоились.
     expect(detail!.call.transcript).toHaveLength(2)
     expect(detail!.call.transitions).toHaveLength(2)
@@ -253,7 +253,7 @@ describe("Бронирование — round-trip даты и времени", (
       }),
     )
 
-    const detail = await getCallDetail("c_tz")
+    const detail = await getCallDetail("c_tz", CO)
     // Схема хранит момент времени, домен — строки. Границы суток и года —
     // самый вероятный случай сползания даты на единицу.
     expect(detail!.booking?.date).toBe("2026-12-31")
@@ -265,7 +265,7 @@ describe("Бронирование — round-trip даты и времени", (
       makeRun({ callId: "c_mid", withBooking: true, bookingDate: "2026-03-01", bookingTime: "00:00" }),
     )
 
-    const detail = await getCallDetail("c_mid")
+    const detail = await getCallDetail("c_mid", CO)
     expect(detail!.booking?.date).toBe("2026-03-01")
     expect(detail!.booking?.time).toBe("00:00")
   })
@@ -294,7 +294,23 @@ describe("Чтение и сортировка", () => {
   })
 
   it("getCallDetail возвращает null для неизвестного звонка", async () => {
-    expect(await getCallDetail("нет-такого")).toBeNull()
+    expect(await getCallDetail("нет-такого", CO)).toBeNull()
+  })
+
+  it("звонок чужой компании недоступен даже по точному callId", async () => {
+    await persistRun(makeRun({ callId: "c_secret" }))
+
+    // Идентификатор верный, компания — чужая. Данные не должны отдаваться:
+    // иначе ссылки на звонки утекали бы между клиентами сервиса.
+    expect(await getCallDetail("c_secret", OTHER_CO)).toBeNull()
+    expect(await getCallDetail("c_secret", CO)).not.toBeNull()
+  })
+
+  it("пакетные выборки не отдают данные чужой компании", async () => {
+    await persistRun(makeRun({ callId: "c_batch", followUpCount: 2 }))
+
+    expect((await callSummaries(["c_batch"], OTHER_CO)).size).toBe(0)
+    expect(await followUpsForCalls(["c_batch"], OTHER_CO)).toEqual([])
   })
 })
 
@@ -303,21 +319,21 @@ describe("Пакетные выборки", () => {
     await persistRun(makeRun({ callId: "c_a" }))
     await persistRun(makeRun({ callId: "c_b" }))
 
-    const map = await callSummaries(["c_a", "c_b", "нет-такого"])
+    const map = await callSummaries(["c_a", "c_b", "нет-такого"], CO)
     expect(map.size).toBe(2)
     expect(map.get("c_a")?.clientName).toBe("Айгуль")
   })
 
   it("пустой список не идёт в базу", async () => {
-    expect((await callSummaries([])).size).toBe(0)
-    expect(await followUpsForCalls([])).toEqual([])
+    expect((await callSummaries([], CO)).size).toBe(0)
+    expect(await followUpsForCalls([], CO)).toEqual([])
   })
 
   it("followUpsForCalls собирает follow-up нескольких звонков", async () => {
     await persistRun(makeRun({ callId: "c_f1", followUpCount: 2 }))
     await persistRun(makeRun({ callId: "c_f2", followUpCount: 1 }))
 
-    const followUps = await followUpsForCalls(["c_f1", "c_f2"])
+    const followUps = await followUpsForCalls(["c_f1", "c_f2"], CO)
     expect(followUps).toHaveLength(3)
   })
 })

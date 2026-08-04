@@ -1,15 +1,21 @@
 import { AppShell } from "@/components/app-shell"
 import { LiveDemo } from "@/components/voice/live-demo"
+import { requirePageAuth } from "@/lib/require-page-auth"
 import { DEMO_SCENARIOS } from "@/lib/voice/scenarios"
-import { DEMO_TENANTS } from "@/lib/voice/tenants"
+import { getTenant } from "@/lib/voice/tenants"
 
 export const metadata = { title: "Live Demo — AAA Voice AI Manager" }
 
-export default function DemoPage() {
-  const tenants = DEMO_TENANTS.map((t) => ({ companyId: t.companyId, name: t.name }))
+export const dynamic = "force-dynamic"
+
+export default async function DemoPage() {
+  const { companyId } = await requirePageAuth()
+  const own = getTenant(companyId)
+  const tenants = own ? [{ companyId: own.companyId, name: own.name }] : []
+  const scenarios = DEMO_SCENARIOS.filter((s) => s.companyId === companyId)
   return (
     <AppShell>
-      <LiveDemo scenarios={DEMO_SCENARIOS} tenants={tenants} />
+      <LiveDemo scenarios={scenarios} tenants={tenants} />
     </AppShell>
   )
 }

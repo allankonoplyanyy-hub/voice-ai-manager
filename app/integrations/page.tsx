@@ -1,9 +1,13 @@
 import { AppShell } from "@/components/app-shell"
+import { requirePageAuth } from "@/lib/require-page-auth"
 import { ADAPTERS } from "@/lib/voice/adapters"
 
 export const metadata = { title: "Интеграции — AAA Voice AI Manager" }
 
-export default function IntegrationsPage() {
+export const dynamic = "force-dynamic"
+
+export default async function IntegrationsPage() {
+  await requirePageAuth()
   return (
     <AppShell>
       <div className="flex flex-col gap-6">

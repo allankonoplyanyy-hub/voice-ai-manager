@@ -1,6 +1,7 @@
 import { Database, Info, ShieldCheck, Webhook } from "lucide-react"
 import { AppShell } from "@/components/app-shell"
 import { isDatabaseConfigured } from "@/lib/db"
+import { requirePageAuth } from "@/lib/require-page-auth"
 import { capabilitiesOf } from "@/lib/voice/modes"
 import { ensureSeeded, storeCounters } from "@/lib/voice/persist"
 import { currentPreflight } from "@/lib/voice/runtime"
@@ -13,6 +14,9 @@ export const metadata = { title: "Настройки — AAA Voice AI Manager" }
 export const dynamic = "force-dynamic"
 
 export default async function SettingsPage() {
+  // Страница раскрывает состояние инфраструктуры: какие секреты заданы, режим
+  // работы и объём данных. Показывается только вошедшим пользователям.
+  await requirePageAuth()
   await ensureSeeded()
   const counters = await storeCounters()
   const dbReady = isDatabaseConfigured()
@@ -129,7 +133,7 @@ export default async function SettingsPage() {
               <div className="flex justify-between gap-2">
                 <dt className="text-muted-foreground">Токен планировщика</dt>
                 <dd className={cronReady ? "text-success" : "text-destructive"}>
-                  {cronReady ? "Задан" : "Не задан — доставка не запускается"}
+                  {cronReady ? "Задан" : "Не ��адан — доставка не запускается"}
                 </dd>
               </div>
             </dl>

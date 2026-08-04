@@ -1,14 +1,20 @@
 import Link from "next/link"
 import { PlayCircle } from "lucide-react"
 import { AppShell } from "@/components/app-shell"
+import { requirePageAuth } from "@/lib/require-page-auth"
 import { DEMO_SCENARIOS } from "@/lib/voice/scenarios"
-import { DEMO_TENANTS } from "@/lib/voice/tenants"
+import { getTenant } from "@/lib/voice/tenants"
 import { OUTCOME_LABELS } from "@/components/voice/badges"
 
 export const metadata = { title: "Сценарии — AAA Voice AI Manager" }
 
-export default function ScenariosPage() {
-  const tenantName = new Map(DEMO_TENANTS.map((t) => [t.companyId, t.name]))
+export const dynamic = "force-dynamic"
+
+export default async function ScenariosPage() {
+  const { companyId } = await requirePageAuth()
+  const own = getTenant(companyId)
+  const tenantName = new Map(own ? [[own.companyId, own.name] as const] : [])
+  const scenarios = DEMO_SCENARIOS.filter((s) => s.companyId === companyId)
   return (
     <AppShell>
       <div className="flex flex-col gap-6">
@@ -21,7 +27,7 @@ export default function ScenariosPage() {
         </header>
 
         <div className="grid gap-4 md:grid-cols-2">
-          {DEMO_SCENARIOS.map((s) => (
+          {scenarios.map((s) => (
             <article key={s.id} className="flex flex-col gap-2 rounded-xl border border-border bg-card p-4">
               <div className="flex items-start justify-between gap-2">
                 <h2 className="text-sm font-semibold">{s.title}</h2>
