@@ -22,12 +22,22 @@ export interface VoiceMetrics {
   unansweredQuestions: string[]
 }
 
+// «Сегодня» считается по UTC-дню — той же основе, что и callsPerDay. Раньше
+// здесь стоял локальный toDateString(), из-за чего карточка «за сегодня» и
+// последний столбец графика могли расходиться. Единый день важнее: показатели
+// на одном экране обязаны быть согласованы.
+// Ограничение: для арендаторов в UTC+5/+6 сутки закрываются не в местную
+// полночь. Корректный учёт требует часового пояса компании.
+function utcDay(iso: string): string {
+  return iso.slice(0, 10)
+}
+
 function inPeriod(call: VoiceCall, period: VoiceMetrics["period"], now: Date): boolean {
-  const started = new Date(call.startedAt)
   if (period === "today") {
-    return started.toDateString() === now.toDateString()
+    return utcDay(call.startedAt) === utcDay(now.toISOString())
   }
   const days = period === "7d" ? 7 : 30
+  const started = new Date(call.startedAt)
   return now.getTime() - started.getTime() <= days * 86400_000
 }
 

@@ -18,7 +18,11 @@ const COMPANY = "test_outbox_co"
 const WEBHOOK = "https://control-center.invalid/hook"
 
 async function resetCompany() {
-  await db.delete(voiceOutboxEvents).where(eq(voiceOutboxEvents.companyId, COMPANY))
+  // Очередь чистится целиком, а не только по своей компании: claimDueEvents и
+  // drainOutbox работают по всей таблице, поэтому события других арендаторов
+  // (в том числе засеянная демо-история) попадали бы в захват и сбивали
+  // счётчики. Прогон файлов последовательный, так что чужие тесты не страдают.
+  await db.delete(voiceOutboxEvents)
   await db
     .insert(voiceCompanies)
     .values({ companyId: COMPANY, name: "Outbox Test", webhookUrl: WEBHOOK, active: true })
@@ -86,7 +90,6 @@ describe("claimDueEvents — атомарный захват", () => {
   })
 
   it("не выдаёт одно событие двум параллельным воркерам", async () => {
-    // 5 событий, два воркера по 5 — сумма захватов не должна превысить 5.
     const ids: string[] = []
     for (let i = 0; i < 5; i++) {
       const { eventId } = await enqueueEvent({
@@ -98,11 +101,14 @@ describe("claimDueEvents — атомарный захват", () => {
       ids.push(eventId)
     }
 
+    // Два воркера просят по 5 при 5 доступных: суммарный захват не должен
+    // превысить 5, иначе одно событие ушло бы в доставку дважды.
     const [a, b] = await Promise.all([claimDueEvents(5), claimDueEvents(5)])
     const claimedIds = [...a.map((e) => e.eventId), ...b.map((e) => e.eventId)]
 
     expect(claimedIds).toHaveLength(5)
     expect(new Set(claimedIds).size).toBe(5)
+    expect(claimedIds.every((id) => ids.includes(id))).toBe(true)
   })
 
   it("повторный захват не возвращает уже захваченные события", async () => {

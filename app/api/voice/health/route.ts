@@ -11,6 +11,7 @@
 import { NextResponse } from "next/server"
 import { sql } from "drizzle-orm"
 import { db } from "@/lib/db"
+import { currentPreflight } from "@/lib/voice/runtime"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -60,11 +61,20 @@ export async function GET(request: Request) {
 
   const checks = [await checkDatabase(), checkSecrets()]
   const ready = checks.every((c) => c.ok)
+  const preflight = currentPreflight()
 
   return NextResponse.json(
     {
       status: ready ? "ready" : "not_ready",
       at: new Date().toISOString(),
+      // Режим выводится из фактического окружения, а не из константы: запрос
+      // live без настроенных провайдеров понижается до demo.
+      mode: {
+        requested: preflight.requestedMode,
+        effective: preflight.effectiveMode,
+        ready: preflight.ready,
+        blockingReasons: preflight.blockingReasons,
+      },
       checks,
     },
     {
