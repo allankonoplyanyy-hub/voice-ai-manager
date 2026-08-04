@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { getCall } from "@/lib/voice/store"
+import { getCallDetail } from "@/lib/voice/persist"
 
 const VALID_REASONS = [
   "customer_request",
@@ -17,8 +17,8 @@ export async function POST(
   { params }: { params: Promise<{ callId: string }> },
 ) {
   const { callId } = await params
-  const call = getCall(callId)
-  if (!call) {
+  const detail = await getCallDetail(callId)
+  if (!detail) {
     return NextResponse.json({ error: "Звонок не найден" }, { status: 404 })
   }
   const body = await request.json().catch(() => null)
@@ -31,7 +31,7 @@ export async function POST(
   return NextResponse.json({
     status: "mock_handoff_queued",
     callId,
-    companyId: call.companyId,
+    companyId: detail.call.companyId,
     reason: body.reason,
   })
 }

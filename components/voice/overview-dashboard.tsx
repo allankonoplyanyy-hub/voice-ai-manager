@@ -1,7 +1,7 @@
 import Link from "next/link"
 import { ArrowRight, CalendarCheck, Phone, PhoneForwarded, Timer, TrendingUp, Users } from "lucide-react"
 import { computeMetrics } from "@/lib/voice/analytics"
-import { getAllCalls, getAllLeads } from "@/lib/voice/store"
+import { ensureSeeded, listAllCalls, listAllFollowUps, listAllLeads } from "@/lib/voice/persist"
 import { DEMO_TENANTS, getTenant } from "@/lib/voice/tenants"
 import { OutcomeBadge, StateBadge, formatDateTime, formatDuration } from "@/components/voice/badges"
 
@@ -28,11 +28,17 @@ function StatCard({
   )
 }
 
-export function OverviewDashboard() {
-  const today = computeMetrics("today")
-  const week = computeMetrics("7d")
-  const recentCalls = getAllCalls().slice(0, 6)
-  const recentLeads = getAllLeads().slice(0, 5)
+export async function OverviewDashboard() {
+  await ensureSeeded()
+  const [calls, leads, followUps] = await Promise.all([
+    listAllCalls(),
+    listAllLeads(),
+    listAllFollowUps(),
+  ])
+  const today = computeMetrics("today", calls, followUps)
+  const week = computeMetrics("7d", calls, followUps)
+  const recentCalls = calls.slice(0, 6)
+  const recentLeads = leads.slice(0, 5)
 
   return (
     <div className="flex flex-col gap-8">

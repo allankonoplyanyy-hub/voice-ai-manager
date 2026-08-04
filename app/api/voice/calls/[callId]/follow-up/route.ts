@@ -1,18 +1,21 @@
+import { randomUUID } from "node:crypto"
 import { NextResponse } from "next/server"
-import { getCall, getStore } from "@/lib/voice/store"
-import type { FollowUp, FollowUpChannel } from "@/lib/voice/types"
+import { db } from "@/lib/db"
+import { voiceFollowUps } from "@/lib/db/schema"
+import { getCallDetail } from "@/lib/voice/persist"
+import type { FollowUpChannel } from "@/lib/voice/types"
 
 const CHANNELS: FollowUpChannel[] = ["sms", "telegram", "whatsapp", "email"]
 
 // Создание follow-up. В demo-режиме наружу ничего не отправляется —
-// создаётся mock-событие со статусом sent_mock.
+// запись сохраняется со статусом sent_mock.
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ callId: string }> },
 ) {
   const { callId } = await params
-  const call = getCall(callId)
-  if (!call) {
+  const detail = await getCallDetail(callId)
+  if (!detail) {
     return NextResponse.json({ error: "Звонок не найден" }, { status: 404 })
   }
   const body = await request.json().catch(() => null)
@@ -23,19 +26,36 @@ export async function POST(
       { status: 400 },
     )
   }
-  const followUp: FollowUp = {
-    id: `fu-manual-${Date.now().toString(36)}`,
-    companyId: call.companyId,
+
+  const id = `fu_${randomUUID()}`
+  const createdAt = new Date()
+  await db.insert(voiceFollowUps).values({
+    id,
+    companyId: detail.call.companyId,
     callId,
     channel,
-    recipient: call.clientPhone,
+    recipient: detail.call.clientPhone,
     text: body.text,
     status: "sent_mock",
     reason: body.reason ?? "Ручной follow-up из Admin UI",
-    errorReason: null,
-    createdAt: new Date().toISOString(),
-  }
-  getStore().followUps.set(followUp.id, followUp)
-  call.followUpIds.push(followUp.id)
-  return NextResponse.json({ followUp }, { status: 201 })
+    createdAt,
+  })
+
+  return NextResponse.json(
+    {
+      followUp: {
+        id,
+        companyId: detail.call.companyId,
+        callId,
+        channel,
+        recipient: detail.call.clientPhone,
+        text: body.text,
+        status: "sent_mock",
+        reason: body.reason ?? "Ручной follow-up из Admin UI",
+        errorReason: null,
+        createdAt: createdAt.toISOString(),
+      },
+    },
+    { status: 201 },
+  )
 }

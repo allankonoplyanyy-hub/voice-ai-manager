@@ -1,12 +1,39 @@
 import { CalendarCheck } from "lucide-react"
 import { AppShell } from "@/components/app-shell"
-import { getAllBookings, getCall } from "@/lib/voice/store"
+import { callSummaries, ensureSeeded, listAllBookings } from "@/lib/voice/persist"
 import { getTenant } from "@/lib/voice/tenants"
 
 export const metadata = { title: "Календарь — AAA Voice AI Manager" }
 
-export default function CalendarPage() {
-  const bookings = getAllBookings()
+const MONTHS_RU = [
+  "января",
+  "февраля",
+  "марта",
+  "апреля",
+  "мая",
+  "июня",
+  "июля",
+  "августа",
+  "сентября",
+  "октября",
+  "ноября",
+  "декабря",
+]
+
+// Дата записи — календарный день, а не момент времени. new Date("2026-08-05")
+// парсится как UTC-полночь, поэтому в западных таймзонах показала бы 4 августа.
+// Разбираем строку напрямую, без часовых поясов.
+function formatBookingDate(date: string): string {
+  const [, month, day] = date.split("-")
+  const monthName = MONTHS_RU[Number(month) - 1] ?? month
+  return `${day} ${monthName}`
+}
+
+export default async function CalendarPage() {
+  await ensureSeeded()
+  const bookings = await listAllBookings()
+  // Имена клиентов одним запросом вместо выборки на каждую запись.
+  const clients = await callSummaries(bookings.map((b) => b.callId))
 
   return (
     <AppShell>
@@ -21,7 +48,7 @@ export default function CalendarPage() {
         <ul className="flex flex-col gap-2">
           {bookings.map((b) => {
             const tenant = getTenant(b.companyId)
-            const call = getCall(b.callId)
+            const call = clients.get(b.callId)
             return (
               <li
                 key={b.id}
@@ -35,7 +62,7 @@ export default function CalendarPage() {
                   </span>
                 </div>
                 <span className="text-sm tabular-nums">
-                  {new Date(b.date).toLocaleDateString("ru-RU", { day: "2-digit", month: "long" })}, {b.time}
+                  {formatBookingDate(b.date)}, {b.time}
                 </span>
                 <span
                   className={

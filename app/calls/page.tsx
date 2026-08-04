@@ -1,12 +1,13 @@
 import { AppShell } from "@/components/app-shell"
 import { CallsList } from "@/components/voice/calls-list"
-import { getAllCalls } from "@/lib/voice/store"
+import { ensureSeeded, listAllCalls } from "@/lib/voice/persist"
 import { DEMO_TENANTS } from "@/lib/voice/tenants"
 
 export const metadata = { title: "Звонки — AAA Voice AI Manager" }
 
-export default function CallsPage() {
-  const calls = getAllCalls().map((c) => ({
+export default async function CallsPage() {
+  await ensureSeeded()
+  const calls = (await listAllCalls()).map((c) => ({
     callId: c.callId,
     companyId: c.companyId,
     clientName: c.clientName,

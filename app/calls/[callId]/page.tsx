@@ -3,21 +3,18 @@ import { notFound } from "next/navigation"
 import { ArrowLeft } from "lucide-react"
 import { AppShell } from "@/components/app-shell"
 import { CallDetail } from "@/components/voice/call-detail"
-import { getBooking, getCall, getEventsByCall, getFollowUpsByCall, getLead } from "@/lib/voice/store"
+import { getCallDetail } from "@/lib/voice/persist"
 import { getTenant } from "@/lib/voice/tenants"
 
 export const metadata = { title: "Карточка звонка — AAA Voice AI Manager" }
 
 export default async function CallPage({ params }: { params: Promise<{ callId: string }> }) {
   const { callId } = await params
-  const call = getCall(callId)
-  if (!call) notFound()
+  const detail = await getCallDetail(callId)
+  if (!detail) notFound()
 
+  const { call, lead, booking, followUps, events } = detail
   const tenant = getTenant(call.companyId)
-  const lead = call.leadId ? (getLead(call.leadId) ?? null) : null
-  const booking = call.bookingId ? (getBooking(call.bookingId) ?? null) : null
-  const followUps = getFollowUpsByCall(call.callId)
-  const events = getEventsByCall(call.callId)
 
   return (
     <AppShell>

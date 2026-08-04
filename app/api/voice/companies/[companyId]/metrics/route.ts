@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { computeMetrics } from "@/lib/voice/analytics"
+import { ensureSeeded, followUpsForCalls, listCallsByCompany } from "@/lib/voice/persist"
 import { getTenant } from "@/lib/voice/tenants"
 
 export async function GET(
@@ -12,5 +13,10 @@ export async function GET(
   }
   const period = new URL(request.url).searchParams.get("period")
   const p = period === "today" || period === "7d" || period === "30d" ? period : "30d"
-  return NextResponse.json({ metrics: computeMetrics(p, companyId) })
+
+  await ensureSeeded()
+  // Изоляция арендатора: читаем только звонки этой компании, follow-up — по их id.
+  const calls = await listCallsByCompany(companyId)
+  const followUps = await followUpsForCalls(calls.map((c) => c.callId))
+  return NextResponse.json({ metrics: computeMetrics(p, calls, followUps) })
 }
