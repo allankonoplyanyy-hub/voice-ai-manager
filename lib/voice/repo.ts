@@ -19,11 +19,7 @@ import {
 import type { TurnMetrics } from "./latency"
 import { type OperatingMode, isOperatingMode } from "./modes"
 
-const UNIQUE_VIOLATION = "23505"
-
-function isUniqueViolation(error: unknown): boolean {
-  return typeof error === "object" && error !== null && (error as { code?: string }).code === UNIQUE_VIOLATION
-}
+import { isUniqueViolation } from "@/lib/db/errors"
 
 /** Ошибка обращения к чужому арендатору. Отдаётся как 404, чтобы не подтверждать существование. */
 export class TenantScopeError extends Error {

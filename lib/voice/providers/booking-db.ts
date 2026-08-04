@@ -23,12 +23,7 @@ import {
   type Staff,
 } from "./booking"
 
-/** Код нарушения уникальности в Postgres. */
-const UNIQUE_VIOLATION = "23505"
-
-function isUniqueViolation(error: unknown): boolean {
-  return typeof error === "object" && error !== null && (error as { code?: string }).code === UNIQUE_VIOLATION
-}
+import { isUniqueViolation } from "@/lib/db/errors"
 
 /**
  * Каталог услуг. Пока задаётся конфигурацией компании, а не внешним API —
@@ -72,32 +67,45 @@ export const DEFAULT_CATALOG: CatalogSource = {
   slotStepMin: 30,
 }
 
+/** Разрешение каталога по компании. Позволяет каждому арендатору иметь свои услуги. */
+export type CatalogResolver = (companyId: string) => CatalogSource
+
 export class DatabaseBookingProvider implements BookingProvider {
   readonly name = "neon"
-  private readonly catalog: CatalogSource
+  private readonly resolveCatalog: CatalogResolver
 
-  constructor(catalog: CatalogSource = DEFAULT_CATALOG) {
-    this.catalog = catalog
+  /**
+   * Принимает либо единый каталог, либо функцию разрешения по компании.
+   * Каталог обязан зависеть от companyId: иначе арендатор увидел бы услуги
+   * чужой компании, и это была бы утечка через каталог, а не через записи.
+   */
+  constructor(catalog: CatalogSource | CatalogResolver = DEFAULT_CATALOG) {
+    this.resolveCatalog = typeof catalog === "function" ? catalog : () => catalog
   }
 
   isConfigured(): boolean {
     return Boolean(process.env.DATABASE_URL)
   }
 
-  async listServices(): Promise<Service[]> {
-    return this.catalog.services.filter((s) => s.active)
+  private catalogFor(companyId: string): CatalogSource {
+    if (!companyId) throw new BookingError("invalid_request", "companyId обязателен", false)
+    return this.resolveCatalog(companyId)
   }
 
-  async listStaff(): Promise<Staff[]> {
-    return this.catalog.staff
+  async listServices(companyId: string): Promise<Service[]> {
+    return this.catalogFor(companyId).services.filter((s) => s.active)
   }
 
-  async listLocations(): Promise<Location[]> {
-    return this.catalog.locations
+  async listStaff(companyId: string): Promise<Staff[]> {
+    return this.catalogFor(companyId).staff
   }
 
-  private service(serviceId: string): Service {
-    const found = this.catalog.services.find((s) => s.serviceId === serviceId && s.active)
+  async listLocations(companyId: string): Promise<Location[]> {
+    return this.catalogFor(companyId).locations
+  }
+
+  private service(companyId: string, serviceId: string): Service {
+    const found = this.catalogFor(companyId).services.find((s) => s.serviceId === serviceId && s.active)
     if (!found) throw new BookingError("service_not_found", `Услуга ${serviceId} не найдена`, false)
     return found
   }
@@ -107,7 +115,7 @@ export class DatabaseBookingProvider implements BookingProvider {
    * Оба вычитания делаются одним запросом к БД, чтобы не отдать слот, который уже занят.
    */
   async getAvailability(query: AvailabilityQuery): Promise<Slot[]> {
-    const service = this.service(query.serviceId)
+    const service = this.service(query.companyId, query.serviceId)
     const from = new Date(query.fromIso)
     const to = new Date(query.toIso)
     if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || to <= from) return []
@@ -148,14 +156,15 @@ export class DatabaseBookingProvider implements BookingProvider {
     }))
 
     const slots: Slot[] = []
-    const stepMs = this.catalog.slotStepMin * 60_000
+    const catalog = this.catalogFor(query.companyId)
+    const stepMs = catalog.slotStepMin * 60_000
     const durationMs = service.durationMin * 60_000
 
     for (let t = this.alignToStep(from, stepMs); t + durationMs <= to.getTime(); t += stepMs) {
       const start = new Date(t)
       const end = new Date(t + durationMs)
       if (start.getTime() < now.getTime()) continue
-      if (!this.withinWorkingHours(start, end)) continue
+      if (!this.withinWorkingHours(start, end, catalog.workingHours)) continue
       const overlaps = busy.some((b) => t < b.end && t + durationMs > b.start)
       if (overlaps) continue
       slots.push({
@@ -172,8 +181,8 @@ export class DatabaseBookingProvider implements BookingProvider {
     return Math.ceil(date.getTime() / stepMs) * stepMs
   }
 
-  private withinWorkingHours(start: Date, end: Date): boolean {
-    const { startHour, endHour } = this.catalog.workingHours
+  private withinWorkingHours(start: Date, end: Date, hours: CatalogSource["workingHours"]): boolean {
+    const { startHour, endHour } = hours
     const startH = start.getUTCHours()
     const endH = end.getUTCHours() + (end.getUTCMinutes() > 0 ? 1 : 0)
     return startH >= startHour && endH <= endHour
@@ -184,7 +193,7 @@ export class DatabaseBookingProvider implements BookingProvider {
    * при гонке второй вызов получит 23505 и корректный slot_taken вместо двойной записи.
    */
   async holdSlot(request: HoldRequest): Promise<Hold> {
-    this.service(request.serviceId)
+    this.service(request.companyId, request.serviceId)
     const startsAt = new Date(request.startsAt)
     const endsAt = new Date(request.endsAt)
     if (Number.isNaN(startsAt.getTime()) || endsAt <= startsAt) {
@@ -314,7 +323,7 @@ export class DatabaseBookingProvider implements BookingProvider {
     }
 
     const bookingId = `bk_${randomUUID()}`
-    const service = this.catalog.services.find((s) => s.serviceId === hold.serviceId)
+    const service = this.catalogFor(request.companyId).services.find((s) => s.serviceId === hold.serviceId)
 
     try {
       await db.insert(voiceBookings).values({

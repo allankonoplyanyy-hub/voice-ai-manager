@@ -111,6 +111,8 @@ export type BookingErrorCode =
   | "provider_unavailable"
   | "not_configured"
   | "rate_limited"
+  /** Некорректный запрос (например, пустой companyId) — повтор не поможет. */
+  | "invalid_request"
 
 export class BookingError extends Error {
   readonly code: BookingErrorCode
