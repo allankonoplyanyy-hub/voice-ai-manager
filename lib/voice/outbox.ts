@@ -88,29 +88,86 @@ export async function enqueueEvent(input: EnqueueInput): Promise<{ eventId: stri
   return { eventId: existing[0]?.eventId ?? eventId, created: false }
 }
 
-/** Забирает события, готовые к доставке. */
+/**
+ * Атомарно захватывает события, готовые к доставке, переводя их в `delivering`.
+ *
+ * Простой SELECT здесь недопустим: два параллельных воркера (или наложившиеся
+ * запуски планировщика) выбрали бы одни и те же строки и доставили событие в
+ * Control Center дважды. `FOR UPDATE SKIP LOCKED` — стандартный приём Postgres
+ * для очереди: каждая строка достаётся ровно одному воркеру, остальные её
+ * пропускают, а не ждут.
+ */
 export async function claimDueEvents(limit = 20): Promise<OutboxEvent[]> {
-  const rows = await db
-    .select()
-    .from(voiceOutboxEvents)
-    .where(and(eq(voiceOutboxEvents.status, "pending"), lte(voiceOutboxEvents.nextAttemptAt, new Date())))
-    .orderBy(asc(voiceOutboxEvents.nextAttemptAt))
-    .limit(limit)
+  const claimed = await db.execute(sql`
+    UPDATE ${voiceOutboxEvents}
+       SET status = 'delivering'
+     WHERE ${voiceOutboxEvents.eventId} IN (
+       SELECT ${voiceOutboxEvents.eventId}
+         FROM ${voiceOutboxEvents}
+        WHERE ${voiceOutboxEvents.status} = 'pending'
+          AND ${voiceOutboxEvents.nextAttemptAt} <= now()
+        ORDER BY ${voiceOutboxEvents.nextAttemptAt} ASC
+        LIMIT ${limit}
+        FOR UPDATE SKIP LOCKED
+     )
+    RETURNING *
+  `)
+
+  const rows = claimed.rows as unknown as Array<{
+    event_id: string
+    company_id: string
+    call_id: string | null
+    type: string
+    schema_version: string
+    payload: Record<string, unknown>
+    idempotency_key: string
+    status: string
+    attempts: number
+    max_attempts: number
+    next_attempt_at: Date
+    last_error: string | null
+  }>
 
   return rows.map((r) => ({
-    eventId: r.eventId,
-    companyId: r.companyId,
-    callId: r.callId,
+    eventId: r.event_id,
+    companyId: r.company_id,
+    callId: r.call_id,
     type: r.type,
-    schemaVersion: r.schemaVersion,
+    schemaVersion: r.schema_version,
     payload: r.payload,
-    idempotencyKey: r.idempotencyKey,
+    idempotencyKey: r.idempotency_key,
     status: r.status as OutboxStatus,
     attempts: r.attempts,
-    maxAttempts: r.maxAttempts,
-    nextAttemptAt: r.nextAttemptAt.toISOString(),
-    lastError: r.lastError,
+    maxAttempts: r.max_attempts,
+    nextAttemptAt: new Date(r.next_attempt_at).toISOString(),
+    lastError: r.last_error,
   }))
+}
+
+/**
+ * Возвращает в очередь захваты, брошенные упавшим воркером.
+ *
+ * Если процесс умер между захватом и результатом, событие осталось в
+ * `delivering` и без этого прохода не доставилось бы никогда. Вызывать перед
+ * каждым проходом доставки.
+ */
+export async function reclaimStaleEvents(staleAfterMs = 120_000): Promise<number> {
+  const cutoff = new Date(Date.now() - staleAfterMs)
+  const result = await db
+    .update(voiceOutboxEvents)
+    .set({ status: "pending" })
+    .where(and(eq(voiceOutboxEvents.status, "delivering"), lte(voiceOutboxEvents.nextAttemptAt, cutoff)))
+    .returning({ eventId: voiceOutboxEvents.eventId })
+  if (result.length > 0) safeLog("outbox.reclaimed_stale", { count: result.length })
+  return result.length
+}
+
+/** Возвращает захваченное событие в очередь, если доставку начать не удалось. */
+export async function releaseEvent(eventId: string): Promise<void> {
+  await db
+    .update(voiceOutboxEvents)
+    .set({ status: "pending" })
+    .where(and(eq(voiceOutboxEvents.eventId, eventId), eq(voiceOutboxEvents.status, "delivering")))
 }
 
 export async function markDelivered(eventId: string): Promise<void> {
@@ -249,25 +306,37 @@ export async function drainOutbox(
   for (const event of events) {
     const target = await resolveTarget(event.companyId)
     if (!target) {
-      // Некуда доставлять — не тратим попытку, просто отодвигаем.
+      // Некуда доставлять — не тратим попытку, но обязательно снимаем захват:
+      // claimDueEvents выбирает только 'pending', поэтому событие, оставленное
+      // в 'delivering', не вернулось бы в очередь никогда.
       await db
         .update(voiceOutboxEvents)
-        .set({ nextAttemptAt: new Date(Date.now() + 60_000), lastError: "webhook не настроен" })
+        .set({ status: "pending", nextAttemptAt: new Date(Date.now() + 60_000), lastError: "webhook не настроен" })
         .where(eq(voiceOutboxEvents.eventId, event.eventId))
       skipped++
       continue
     }
-    const result = await deliverEvent(event, target, fetchImpl)
-    if (result.ok) delivered++
-    else {
+
+    // deliverEvent сам не бросает, но resolveTarget/сеть могут дать неожиданное
+    // исключение — без catch событие осталось бы захваченным навсегда.
+    try {
+      const result = await deliverEvent(event, target, fetchImpl)
+      if (result.ok) delivered++
+      else {
+        failed++
+        if (result.deadLettered) deadLettered++
+        safeLog("outbox.delivery_failed", {
+          eventId: result.eventId,
+          type: event.type,
+          error: result.error ?? result.status,
+          deadLettered: result.deadLettered ?? false,
+        })
+      }
+    } catch (error) {
       failed++
-      if (result.deadLettered) deadLettered++
-      safeLog("outbox.delivery_failed", {
-        eventId: result.eventId,
-        type: event.type,
-        error: result.error ?? result.status,
-        deadLettered: result.deadLettered ?? false,
-      })
+      const outcome = await markFailed(event.eventId, error instanceof Error ? error.message : "unknown")
+      if (outcome.deadLettered) deadLettered++
+      safeLog("outbox.delivery_threw", { eventId: event.eventId, type: event.type })
     }
   }
 
