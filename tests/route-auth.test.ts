@@ -47,7 +47,7 @@ const PUBLIC_ROUTES: Record<string, RegExp> = {
 }
 
 const SESSION_GUARDS =
-  /requireAuth|requirePageAuth|requireCompanyAccess|getAuthContext|authenticateRequest|authenticateCompanyRequest/
+  /requireAuth|requirePageAuth|requireCompanyAccess|getAuthContext|authenticateRequest|authenticateCompanyRequest|auth\.api\.getSession/
 
 describe("защита маршрутов API", () => {
   const routes = collect(APP_DIR, ["route.ts"]).map(relative)
@@ -97,7 +97,7 @@ describe("защита страниц", () => {
     expect(unprotected).toEqual([])
   })
 
-  it("открытые страницы всё равно обращаются к сессии", () => {
+  it("страницы входа и экран без компании тоже смотрят на сессию", () => {
     // Вошедшего человека нельзя оставлять на странице входа, а на странице
     // «нет компании» — держать после выдачи привязки.
     for (const path of PUBLIC_PAGES) {
