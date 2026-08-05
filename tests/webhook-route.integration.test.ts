@@ -151,9 +151,10 @@ describeDb("POST /api/voice/webhooks/provider", () => {
 
   it("КРИТИЧНО: подпись одной компании не действует для другой", async () => {
     webhookLimiter.reset()
-    // Тело и подпись валидны, но companyId подменён. Подпись не привязана к компании,
-    // поэтому защиту здесь обеспечивает то, что event_id уникален в пределах компании,
-    // а сам факт доступа проверяется отдельно — тест фиксирует текущий контракт.
+    // Подпись покрывает только timestamp и тело, но не заголовок с компанией.
+    // Для событий без набранного номера привязка остаётся заголовочной — этот
+    // тест фиксирует такой случай. События с номером сверяются с маршрутизацией
+    // (см. тесты ниже), и подмена заголовка там уже не проходит.
     const eventId = `evt_cross_${Date.now()}`
     const a = await POST(buildRequest({ body: { event: "x" }, secret: SECRET, companyId: COMPANY, eventId }))
     expect(a.status).toBe(200)
@@ -176,6 +177,68 @@ describeDb("POST /api/voice/webhooks/provider", () => {
     const rows = await db.select().from(voiceAuditLog).where(eq(voiceAuditLog.companyId, COMPANY))
     const serialized = JSON.stringify(rows)
     expect(serialized).not.toContain(SECRET)
+  })
+
+  describe("привязка события к компании по набранному номеру", () => {
+    const OWN_NUMBER = "+77000000001"
+    const OTHER_NUMBER = "+77000000002"
+
+    beforeAll(() => {
+      process.env.VOICE_TELEPHONY_ROUTING = JSON.stringify([
+        { companyId: COMPANY, kind: "rented", publicNumber: OWN_NUMBER, provider: "twilio" },
+        { companyId: OTHER, kind: "rented", publicNumber: OTHER_NUMBER, provider: "twilio" },
+      ])
+    })
+
+    afterAll(() => {
+      delete process.env.VOICE_TELEPHONY_ROUTING
+    })
+
+    it("принимает событие с номером своей компании", async () => {
+      webhookLimiter.reset()
+      const response = await POST(
+        buildRequest({ body: { event: "call.started", To: OWN_NUMBER }, secret: SECRET, companyId: COMPANY }),
+      )
+      expect(response.status).toBe(200)
+    })
+
+    it("КРИТИЧНО: событие с номером чужой компании отклоняется", async () => {
+      webhookLimiter.reset()
+      // Подпись валидна, но набранный номер принадлежит другой компании.
+      // Заголовок с companyId не входит в preimage подписи, поэтому только
+      // сверка с подписанным номером не даёт дописать звонок в чужой кабинет.
+      const eventId = `evt_wrong_number_${Date.now()}`
+      const response = await POST(
+        buildRequest({
+          body: { event: "call.started", To: OTHER_NUMBER },
+          secret: SECRET,
+          companyId: COMPANY,
+          eventId,
+        }),
+      )
+
+      expect(response.status).toBe(401)
+
+      // Событие не должно сохраниться ни под одной компанией.
+      const rows = await db.select().from(voiceInboundEvents).where(eq(voiceInboundEvents.eventId, eventId))
+      expect(rows).toHaveLength(0)
+    })
+
+    it("событие с неизвестным номером отклоняется", async () => {
+      webhookLimiter.reset()
+      const response = await POST(
+        buildRequest({ body: { event: "call.started", To: "+77009999999" }, secret: SECRET, companyId: COMPANY }),
+      )
+      expect(response.status).toBe(401)
+    })
+
+    it("номер, записанный в другом формате, распознаётся как свой", async () => {
+      webhookLimiter.reset()
+      const response = await POST(
+        buildRequest({ body: { event: "call.started", To: "8 700 000 00 01" }, secret: SECRET, companyId: COMPANY }),
+      )
+      expect(response.status).toBe(200)
+    })
   })
 
   it("включает Retry-After при превышении лимита частоты", async () => {

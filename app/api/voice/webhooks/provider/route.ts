@@ -15,6 +15,8 @@ import { getCompany, registerInboundEvent, writeAudit } from "@/lib/voice/repo"
 import { redactObject } from "@/lib/voice/redaction"
 import { webhookLimiter } from "@/lib/voice/rate-limit"
 import { MAX_WEBHOOK_BODY_BYTES, signaturePrefix, verifyWebhook } from "@/lib/voice/security"
+import { extractDialedNumber, resolveCompanyByDialedNumber } from "@/lib/voice/providers/telephony"
+import { routingConfig } from "@/lib/voice/telephony-routing"
 
 export const runtime = "nodejs"
 // Маршрут обязан читать сырое тело для HMAC, поэтому кеширование исключено.
@@ -89,6 +91,28 @@ export async function POST(request: Request) {
     payload = rawBody.length > 0 ? JSON.parse(rawBody) : {}
   } catch {
     return NextResponse.json({ error: "invalid_json" }, { status: 400 })
+  }
+
+  // Заголовок с компанией не входит в preimage подписи, поэтому сам по себе он
+  // не доказывает принадлежность события. Если в подписанном теле есть
+  // набранный номер, компания определяется по нему, и расхождение с заголовком
+  // отклоняется: иначе владелец секрета мог бы дописывать звонки в чужой
+  // кабинет, просто подменив заголовок.
+  const dialed = extractDialedNumber(payload)
+  if (dialed) {
+    const resolved = resolveCompanyByDialedNumber(routingConfig().index, dialed)
+    if (resolved !== companyId) {
+      await writeAudit({
+        companyId,
+        actor: "provider_webhook",
+        action: "webhook.rejected",
+        targetType: "event",
+        targetId: eventId,
+        outcome: "denied",
+        detail: { reason: resolved ? "company_mismatch" : "unknown_dialed_number" },
+      })
+      return unauthorized()
+    }
   }
 
   // Идемпотентность в БД: уникальный индекс (company_id, source, event_id)

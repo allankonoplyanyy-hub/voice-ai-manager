@@ -43,7 +43,8 @@ export const ADAPTERS: AdapterDescriptor[] = [
     mockProvider: "Mock Telephony (demo)",
     liveProviders: ["Twilio", "Telnyx"],
     status: "mock",
-    description: "Приём входящих звонков и webhook провайдера. В demo-режиме звонки имитируются, реальная телефония не подключена.",
+    description:
+      "Приём входящих звонков и webhook провайдера. Компания сама выбирает схему: свой номер с переадресацией на SIP или арендованный номер провайдера. В demo-режиме звонки имитируются.",
   },
   {
     id: "stt",
