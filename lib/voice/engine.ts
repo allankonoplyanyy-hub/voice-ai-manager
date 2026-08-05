@@ -23,14 +23,10 @@ export interface ScenarioRunResult {
 
 const AVG_STEP_SEC = 14
 
-function mockSignature(payload: string): string {
-  // Демонстрационная «подпись» — не криптография. Live-режим будет использовать HMAC-SHA256.
-  let h = 0
-  for (let i = 0; i < payload.length; i++) {
-    h = (h * 31 + payload.charCodeAt(i)) >>> 0
-  }
-  return `mock-sig-${h.toString(16)}`
-}
+// Движок не подписывает события намеренно: подпись зависит от получателя и
+// ставится при доставке (lib/voice/outbox.ts, HMAC-SHA256 секретом арендатора).
+// Прежняя «подпись» на самодельном хеше по 31 не была криптографией и не
+// проверялась ни одним потребителем.
 
 function intentFromScenario(s: DemoScenario): string {
   const map: Record<string, string> = {
@@ -111,7 +107,6 @@ export function runScenario(
       timestamp,
       idempotencyKey,
       payload,
-      signature: mockSignature(idempotencyKey),
     })
   }
 

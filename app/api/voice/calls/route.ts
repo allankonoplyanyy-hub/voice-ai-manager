@@ -1,26 +1,97 @@
 import { NextResponse } from "next/server"
+import { authenticateRequest } from "@/lib/api-auth"
 import { runScenario } from "@/lib/voice/engine"
+import { TurnTimer, checkBudgets } from "@/lib/voice/latency"
+import { ensureCompanies, ensureSeeded, listCallsByCompany, persistRun } from "@/lib/voice/persist"
+import { safeLog } from "@/lib/voice/redaction"
+import { writeAudit } from "@/lib/voice/repo"
+import { effectiveMode } from "@/lib/voice/runtime"
 import { getScenario } from "@/lib/voice/scenarios"
-import { getAllCalls, getStore, persistRun } from "@/lib/voice/store"
 
 export async function GET() {
-  return NextResponse.json({ calls: getAllCalls() })
+  const { ctx, response } = await authenticateRequest()
+  if (response) return response
+
+  await ensureSeeded()
+  return NextResponse.json({ calls: await listCallsByCompany(ctx.companyId) })
 }
 
 // Запуск demo-звонка по сценарию. Внешние API не вызываются.
 export async function POST(request: Request) {
+  const { ctx, response } = await authenticateRequest()
+  if (response) return response
+
   const body = await request.json().catch(() => null)
   const scenarioId = body?.scenarioId as string | undefined
   if (!scenarioId) {
     return NextResponse.json({ error: "scenarioId обязателен" }, { status: 400 })
   }
   const scenario = getScenario(scenarioId)
-  if (!scenario) {
+
+  // Сценарий несёт собственный companyId, и он попадал в базу как есть. Без
+  // сверки с сессией любой вошедший мог записать звонок в чужую компанию,
+  // просто указав её сценарий. Чужой сценарий отвечает так же, как
+  // несуществующий: иначе по коду ответа можно было бы перечислить компании.
+  if (!scenario || scenario.companyId !== ctx.companyId) {
+    await writeAudit({
+      companyId: ctx.companyId,
+      actor: ctx.email,
+      action: "call.create",
+      targetType: "scenario",
+      targetId: scenarioId,
+      outcome: "denied",
+      detail: { reason: scenario ? "scenario_of_other_company" : "scenario_not_found" },
+    })
     return NextResponse.json({ error: "Сценарий не найден" }, { status: 404 })
   }
+
+  // Гейт режима: в disabled система не принимает ничего. Проверка стоит до
+  // любой записи, чтобы отключение действительно останавливало поток.
+  const mode = effectiveMode()
+  if (mode === "disabled") {
+    return NextResponse.json(
+      { error: "Режим disabled: приём звонков остановлен", mode },
+      { status: 503 },
+    )
+  }
+
+  // Компания-арендатор должна существовать до записи звонка: outbox определяет
+  // адрес доставки именно по ней.
+  await ensureCompanies()
   const runId = `run-${Date.now().toString(36)}`
   const result = runScenario(scenario, new Date(), runId)
-  persistRun(getStore(), result)
+
+  // Замеряем реальную латентность обработки, а не смоделированные тайминги
+  // сценария: сеть до Postgres и запись в outbox — то, что действительно
+  // способно деградировать в проде.
+  const timer = new TurnTimer({
+    callId: result.call.callId,
+    companyId: result.call.companyId,
+    turnIndex: 0,
+    mode,
+  })
+  await timer.measure("booking_provider", () => persistRun(result))
+  timer.mark("first_audio_delivered")
+  const metrics = timer.end()
+  const violations = checkBudgets(metrics)
+  if (violations.length > 0) {
+    safeLog("latency.budget_exceeded", {
+      callId: metrics.callId,
+      mode,
+      violations: violations.map((v) => `${v.stage}:+${v.overByMs}ms`),
+    })
+  }
+
+  await writeAudit({
+    companyId: ctx.companyId,
+    actor: ctx.email,
+    action: "call.create",
+    targetType: "call",
+    targetId: result.call.callId,
+    outcome: "ok",
+    detail: { scenarioId: scenario.id, runId, mode },
+  })
+
   return NextResponse.json(
     {
       call: result.call,
@@ -28,6 +99,8 @@ export async function POST(request: Request) {
       booking: result.booking,
       followUps: result.followUps,
       events: result.events,
+      mode,
+      latencyMs: metrics.fullTurnMs,
     },
     { status: 201 },
   )

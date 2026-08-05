@@ -171,7 +171,8 @@ export interface VoiceEvent {
   timestamp: string
   idempotencyKey: string
   payload: Record<string, unknown>
-  signature: string // mock HMAC
+  // Подписи здесь нет намеренно: HMAC зависит от получателя и ставится при
+  // доставке в lib/voice/outbox.ts секретом конкретного арендатора.
 }
 
 export interface CallError {

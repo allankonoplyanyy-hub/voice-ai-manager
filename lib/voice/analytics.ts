@@ -1,7 +1,8 @@
-import { getAllCalls, getCallsByCompany, getStore } from "./store"
-import type { VoiceCall } from "./types"
+import type { FollowUp, VoiceCall } from "./types"
 
-// Все метрики рассчитываются из demo-звонков в store — никаких случайных значений.
+// Чистые вычисления над уже загруженными данными: функции принимают звонки и
+// follow-up, а не обращаются к хранилищу сами. Так расчёт метрик не зависит от
+// источника (БД, тест, фикстура) и тестируется без базы.
 
 export interface VoiceMetrics {
   period: "today" | "7d" | "30d"
@@ -21,23 +22,32 @@ export interface VoiceMetrics {
   unansweredQuestions: string[]
 }
 
+// «Сегодня» считается по UTC-дню — той же основе, что и callsPerDay. Раньше
+// здесь стоял локальный toDateString(), из-за чего карточка «за сегодня» и
+// последний столбец графика могли расходиться. Единый день важнее: показатели
+// на одном экране обязаны быть согласованы.
+// Ограничение: для арендаторов в UTC+5/+6 сутки закрываются не в местную
+// полночь. Корректный учёт требует часового пояса компании.
+function utcDay(iso: string): string {
+  return iso.slice(0, 10)
+}
+
 function inPeriod(call: VoiceCall, period: VoiceMetrics["period"], now: Date): boolean {
-  const started = new Date(call.startedAt)
   if (period === "today") {
-    return started.toDateString() === now.toDateString()
+    return utcDay(call.startedAt) === utcDay(now.toISOString())
   }
   const days = period === "7d" ? 7 : 30
+  const started = new Date(call.startedAt)
   return now.getTime() - started.getTime() <= days * 86400_000
 }
 
 export function computeMetrics(
   period: VoiceMetrics["period"],
-  companyId?: string,
+  source: VoiceCall[],
+  followUpsSource: FollowUp[] = [],
+  now: Date = new Date(),
 ): VoiceMetrics {
-  const now = new Date()
-  const source = companyId ? getCallsByCompany(companyId) : getAllCalls()
   const calls = source.filter((c) => inPeriod(c, period, now))
-  const store = getStore()
 
   const answered = calls.filter((c) => c.state !== "no_answer" && c.state !== "provider_failed")
   const missed = calls.length - answered.length
@@ -47,7 +57,7 @@ export function computeMetrics(
   const bookings = calls.filter((c) => c.bookingId !== null)
 
   const callIds = new Set(calls.map((c) => c.callId))
-  const followUpsSent = [...store.followUps.values()].filter(
+  const followUpsSent = followUpsSource.filter(
     (f) => callIds.has(f.callId) && f.status === "sent_mock",
   ).length
 
@@ -91,9 +101,11 @@ export function computeMetrics(
   }
 }
 
-export function callsPerDay(days: number, companyId?: string): { date: string; calls: number; leads: number }[] {
-  const now = new Date()
-  const source = companyId ? getCallsByCompany(companyId) : getAllCalls()
+export function callsPerDay(
+  days: number,
+  source: VoiceCall[],
+  now: Date = new Date(),
+): { date: string; calls: number; leads: number }[] {
   const result: { date: string; calls: number; leads: number }[] = []
   for (let i = days - 1; i >= 0; i--) {
     const d = new Date(now)

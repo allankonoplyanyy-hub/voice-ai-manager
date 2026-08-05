@@ -17,6 +17,8 @@ import {
   Settings,
   X,
 } from "lucide-react"
+import { SignOutButton } from "@/components/sign-out-button"
+import { authClient } from "@/lib/auth-client"
 import { cn } from "@/lib/utils"
 
 const NAV = [
@@ -35,6 +37,7 @@ const NAV = [
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const { data: session } = authClient.useSession()
 
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href)
@@ -83,10 +86,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <aside className="hidden md:flex w-60 shrink-0 flex-col gap-6 border-r border-sidebar-border bg-sidebar py-5 px-3">
         {brand}
         {nav}
-        <div className="mt-auto px-3">
+        <div className="mt-auto flex flex-col gap-3 px-3">
           <p className="text-xs leading-relaxed text-muted-foreground">
             Телефония не подключена. Все звонки — имитация demo-сценариев.
           </p>
+          {session?.user && (
+            <div className="flex flex-col gap-2 border-t border-sidebar-border pt-3">
+              <span className="truncate text-xs text-muted-foreground" title={session.user.email}>
+                {session.user.email}
+              </span>
+              <SignOutButton variant="ghost" className="w-full justify-start px-2" />
+            </div>
+          )}
         </div>
       </aside>
 

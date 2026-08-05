@@ -1,12 +1,18 @@
 import { AppShell } from "@/components/app-shell"
 import { CallsList } from "@/components/voice/calls-list"
-import { getAllCalls } from "@/lib/voice/store"
-import { DEMO_TENANTS } from "@/lib/voice/tenants"
+import { requirePageAuth } from "@/lib/require-page-auth"
+import { ensureSeeded, listCallsByCompany } from "@/lib/voice/persist"
+import { getTenant } from "@/lib/voice/tenants"
 
 export const metadata = { title: "Звонки — AAA Voice AI Manager" }
 
-export default function CallsPage() {
-  const calls = getAllCalls().map((c) => ({
+// Список читается из базы: без этого новый звонок не появился бы до пересборки.
+export const dynamic = "force-dynamic"
+
+export default async function CallsPage() {
+  const { companyId } = await requirePageAuth()
+  await ensureSeeded()
+  const calls = (await listCallsByCompany(companyId)).map((c) => ({
     callId: c.callId,
     companyId: c.companyId,
     clientName: c.clientName,
@@ -20,7 +26,10 @@ export default function CallsPage() {
     hasBooking: c.bookingId !== null,
     hasHandoff: c.handoff !== null,
   }))
-  const tenants = DEMO_TENANTS.map((t) => ({ companyId: t.companyId, name: t.name }))
+  // В фильтре остаётся только своя компания: перечень остальных клиентов
+  // сервиса пользователю видеть незачем.
+  const tenant = getTenant(companyId)
+  const tenants = tenant ? [{ companyId: tenant.companyId, name: tenant.name }] : []
 
   return (
     <AppShell>

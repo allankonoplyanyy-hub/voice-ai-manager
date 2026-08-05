@@ -1,23 +1,31 @@
 import { Bot, Phone, ShieldAlert, Timer, Wallet } from "lucide-react"
 import { AppShell } from "@/components/app-shell"
-import { DEMO_TENANTS, getKnowledge } from "@/lib/voice/tenants"
+import { requirePageAuth } from "@/lib/require-page-auth"
+import { getKnowledge, getTenant } from "@/lib/voice/tenants"
 
 export const metadata = { title: "Ассистенты — AAA Voice AI Manager" }
 
-export default function AssistantsPage() {
+export const dynamic = "force-dynamic"
+
+export default async function AssistantsPage() {
+  const { companyId } = await requirePageAuth()
+  // Показывается только свой ассистент: системный промт, лимиты и номер —
+  // коммерческие настройки, которые другим компаниям видеть нельзя.
+  const own = getTenant(companyId)
+  const tenants = own ? [own] : []
+
   return (
     <AppShell>
       <div className="flex flex-col gap-6">
         <header className="flex flex-col gap-1">
-          <h1 className="text-2xl font-semibold">Ассистенты</h1>
+          <h1 className="text-2xl font-semibold">Ассистент</h1>
           <p className="text-sm text-muted-foreground">
-            Голосовые ассистенты компаний. Каждая компания изолирована: собственный номер,
-            приветствие, промт, лимиты и база знаний.
+            Голосовой ассистент вашей компании: номер, приветствие, промт, лимиты и база знаний.
           </p>
         </header>
 
         <div className="grid gap-4 lg:grid-cols-2">
-          {DEMO_TENANTS.map((t) => {
+          {tenants.map((t) => {
             const docsCount = getKnowledge(t.companyId).length
             return (
               <article

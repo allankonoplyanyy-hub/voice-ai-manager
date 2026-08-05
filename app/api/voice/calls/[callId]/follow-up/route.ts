@@ -1,18 +1,26 @@
+import { randomUUID } from "node:crypto"
 import { NextResponse } from "next/server"
-import { getCall, getStore } from "@/lib/voice/store"
-import type { FollowUp, FollowUpChannel } from "@/lib/voice/types"
+import { authenticateRequest } from "@/lib/api-auth"
+import { db } from "@/lib/db"
+import { voiceFollowUps } from "@/lib/db/schema"
+import { getCallDetail } from "@/lib/voice/persist"
+import { writeAudit } from "@/lib/voice/repo"
+import type { FollowUpChannel } from "@/lib/voice/types"
 
 const CHANNELS: FollowUpChannel[] = ["sms", "telegram", "whatsapp", "email"]
 
 // Создание follow-up. В demo-режиме наружу ничего не отправляется —
-// создаётся mock-событие со статусом sent_mock.
+// запись сохраняется со статусом sent_mock.
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ callId: string }> },
 ) {
+  const { ctx, response } = await authenticateRequest()
+  if (response) return response
+
   const { callId } = await params
-  const call = getCall(callId)
-  if (!call) {
+  const detail = await getCallDetail(callId, ctx.companyId)
+  if (!detail) {
     return NextResponse.json({ error: "Звонок не найден" }, { status: 404 })
   }
   const body = await request.json().catch(() => null)
@@ -23,19 +31,49 @@ export async function POST(
       { status: 400 },
     )
   }
-  const followUp: FollowUp = {
-    id: `fu-manual-${Date.now().toString(36)}`,
-    companyId: call.companyId,
+
+  const id = `fu_${randomUUID()}`
+  const createdAt = new Date()
+  await db.insert(voiceFollowUps).values({
+    id,
+    companyId: detail.call.companyId,
     callId,
     channel,
-    recipient: call.clientPhone,
+    recipient: detail.call.clientPhone,
     text: body.text,
     status: "sent_mock",
     reason: body.reason ?? "Ручной follow-up из Admin UI",
-    errorReason: null,
-    createdAt: new Date().toISOString(),
-  }
-  getStore().followUps.set(followUp.id, followUp)
-  call.followUpIds.push(followUp.id)
-  return NextResponse.json({ followUp }, { status: 201 })
+    createdAt,
+  })
+
+  // Сообщение уходит клиенту от имени компании. В журнал пишется канал и
+  // получатель, но не текст: он может содержать личные данные, а журнал хранится
+  // дольше самой переписки.
+  await writeAudit({
+    companyId: ctx.companyId,
+    actor: ctx.email,
+    action: "follow_up.created",
+    targetType: "call",
+    targetId: callId,
+    outcome: "ok",
+    detail: { followUpId: id, channel, recipient: detail.call.clientPhone },
+  })
+
+  return NextResponse.json(
+    {
+      followUp: {
+        id,
+        companyId: detail.call.companyId,
+        callId,
+        channel,
+        recipient: detail.call.clientPhone,
+        text: body.text,
+        status: "sent_mock",
+        reason: body.reason ?? "Ручной follow-up из Admin UI",
+        errorReason: null,
+        createdAt: createdAt.toISOString(),
+      },
+    },
+    { status: 201 },
+  )
 }
