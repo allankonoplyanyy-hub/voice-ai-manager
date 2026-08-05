@@ -4,6 +4,7 @@ import { useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Bot } from "lucide-react"
+import { signUpWithInvite } from "@/app/sign-up/actions"
 import { authClient } from "@/lib/auth-client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -21,6 +22,7 @@ export function AuthForm({ mode }: { mode: "sign-in" | "sign-up" }) {
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [code, setCode] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
@@ -31,16 +33,24 @@ export function AuthForm({ mode }: { mode: "sign-in" | "sign-up" }) {
     setError(null)
     setLoading(true)
 
-    const { error: authError } = isSignUp
-      ? await authClient.signUp.email({ email, password, name })
-      : await authClient.signIn.email({ email, password })
+    // Регистрация идёт через серверное действие: там проверяется код и
+    // определяется компания. Клиент не может выбрать её сам.
+    if (isSignUp) {
+      const result = await signUpWithInvite({ name, email, password, code })
+      if (!result.ok) {
+        setLoading(false)
+        setError(result.error)
+        return
+      }
+    }
 
+    const { error: authError } = await authClient.signIn.email({ email, password })
     setLoading(false)
 
     if (authError) {
       setError(
         isSignUp
-          ? "Не удалось создать аккаунт. Проверьте данные и попробуйте снова."
+          ? "Аккаунт создан, но войти не удалось. Попробуйте войти вручную."
           : "Неверный email или пароль.",
       )
       return
@@ -108,13 +118,32 @@ export function AuthForm({ mode }: { mode: "sign-in" | "sign-up" }) {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              minLength={8}
+              minLength={isSignUp ? 12 : undefined}
               autoComplete={isSignUp ? "new-password" : "current-password"}
             />
             {isSignUp && (
-              <p className="text-xs text-muted-foreground">Не короче 8 символов.</p>
+              <p className="text-xs text-muted-foreground">Не короче 12 символов.</p>
             )}
           </div>
+
+          {isSignUp && (
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="code">Код приглашения</Label>
+              <Input
+                id="code"
+                value={code}
+                onChange={(e) => setCode(e.target.value.toUpperCase())}
+                required
+                autoComplete="off"
+                spellCheck={false}
+                placeholder="CLINIC-ALMATY-2026"
+                className="font-mono tracking-wide"
+              />
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                Код выдаёт ваша компания. Он определяет, чьи звонки и заявки вы увидите.
+              </p>
+            </div>
+          )}
 
           {error && (
             <p className="text-sm text-destructive" role="alert">

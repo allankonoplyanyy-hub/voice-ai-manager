@@ -10,6 +10,7 @@
 
 import { NextResponse } from "next/server"
 import { sql } from "drizzle-orm"
+import { getAuthContext } from "@/lib/auth-context"
 import { db } from "@/lib/db"
 import { currentPreflight } from "@/lib/voice/runtime"
 
@@ -63,6 +64,21 @@ export async function GET(request: Request) {
   const ready = checks.every((c) => c.ok)
   const preflight = currentPreflight()
 
+  // Код ответа остаётся публичным: балансировщик не умеет входить в аккаунт,
+  // а 503 нужен ему, чтобы снять инстанс с трафика.
+  const status = ready ? 200 : 503
+  const headers = { "Cache-Control": "no-store" }
+
+  // Подробности — только для своих. Анонимный ответ перечислял, какие секреты
+  // не настроены, то есть прямо подсказывал, какая защита сейчас отключена.
+  const ctx = await getAuthContext()
+  if (!ctx) {
+    return NextResponse.json(
+      { status: ready ? "ready" : "not_ready", at: new Date().toISOString() },
+      { status, headers },
+    )
+  }
+
   return NextResponse.json(
     {
       status: ready ? "ready" : "not_ready",
@@ -77,9 +93,6 @@ export async function GET(request: Request) {
       },
       checks,
     },
-    {
-      status: ready ? 200 : 503,
-      headers: { "Cache-Control": "no-store" },
-    },
+    { status, headers },
   )
 }

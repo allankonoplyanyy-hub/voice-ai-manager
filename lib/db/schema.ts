@@ -84,6 +84,18 @@ export const voiceCompanyMembers = pgTable(
   (t) => [uniqueIndex("voice_company_members_user_company_unique").on(t.userId, t.companyId)],
 )
 
+// Код приглашения — единственный способ привязать аккаунт к компании.
+// Компания берётся из этой записи на сервере, а не из того, что прислал клиент.
+export const voiceInvites = pgTable("voice_invites", {
+  code: text("code").primaryKey(),
+  companyId: text("company_id").notNull(),
+  role: text("role").notNull().default("operator"),
+  maxUses: integer("max_uses").notNull().default(1),
+  usedCount: integer("used_count").notNull().default(0),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+})
+
 export const voiceCompanies = pgTable("voice_companies", {
   companyId: text("company_id").primaryKey(),
   name: text("name").notNull(),

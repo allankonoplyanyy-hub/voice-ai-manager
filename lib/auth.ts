@@ -24,6 +24,12 @@ export const auth = betterAuth({
     ...(process.env.VERCEL_PROJECT_PRODUCTION_URL
       ? [`https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`]
       : []),
+    // Превью-песочница выдаётся на одноразовом поддомене, который заранее
+    // неизвестен и не совпадает с V0_RUNTIME_URL. Маски добавляются только в
+    // dev: в продакшене доверять целому домену нельзя.
+    ...(process.env.NODE_ENV === "development"
+      ? ["https://*.vercel.run", "https://*.vusercontent.net"]
+      : []),
   ],
   session: {
     expiresIn: 60 * 60 * 24 * 7,
