@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { authenticateRequest } from "@/lib/api-auth"
 import { getCallDetail } from "@/lib/voice/persist"
+import { writeAudit } from "@/lib/voice/repo"
 
 const VALID_REASONS = [
   "customer_request",
@@ -32,6 +33,18 @@ export async function POST(
       { status: 400 },
     )
   }
+  // Передача разговора оператору меняет обслуживание клиента, поэтому в журнале
+  // должно остаться, кто именно её запросил.
+  await writeAudit({
+    companyId: ctx.companyId,
+    actor: ctx.email,
+    action: "call.handoff_requested",
+    targetType: "call",
+    targetId: callId,
+    outcome: "ok",
+    detail: { reason: body.reason },
+  })
+
   return NextResponse.json({
     status: "mock_handoff_queued",
     callId,

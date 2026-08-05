@@ -4,6 +4,7 @@ import { authenticateRequest } from "@/lib/api-auth"
 import { db } from "@/lib/db"
 import { voiceFollowUps } from "@/lib/db/schema"
 import { getCallDetail } from "@/lib/voice/persist"
+import { writeAudit } from "@/lib/voice/repo"
 import type { FollowUpChannel } from "@/lib/voice/types"
 
 const CHANNELS: FollowUpChannel[] = ["sms", "telegram", "whatsapp", "email"]
@@ -43,6 +44,19 @@ export async function POST(
     status: "sent_mock",
     reason: body.reason ?? "Ручной follow-up из Admin UI",
     createdAt,
+  })
+
+  // Сообщение уходит клиенту от имени компании. В журнал пишется канал и
+  // получатель, но не текст: он может содержать личные данные, а журнал хранится
+  // дольше самой переписки.
+  await writeAudit({
+    companyId: ctx.companyId,
+    actor: ctx.email,
+    action: "follow_up.created",
+    targetType: "call",
+    targetId: callId,
+    outcome: "ok",
+    detail: { followUpId: id, channel, recipient: detail.call.clientPhone },
   })
 
   return NextResponse.json(
