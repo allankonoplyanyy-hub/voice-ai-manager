@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { authenticateRequest } from "@/lib/api-auth"
+import { writeAudit } from "@/lib/voice/repo"
 import { runScenario } from "@/lib/voice/engine"
 import { ensureCompanies, persistRun } from "@/lib/voice/persist"
 import { getScenario } from "@/lib/voice/scenarios"
@@ -9,7 +10,7 @@ import { getScenario } from "@/lib/voice/scenarios"
 export async function POST(request: Request) {
   // Запуск пишет звонки в базу и ставит события в очередь доставки — анонимно
   // такое допускать нельзя.
-  const { response } = await authenticateRequest()
+  const { ctx, response } = await authenticateRequest()
   if (response) return response
 
   const body = (await request.json().catch(() => null)) as { scenarioId?: string } | null
@@ -17,7 +18,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "scenarioId обязателен" }, { status: 400 })
   }
   const scenario = getScenario(body.scenarioId)
-  if (!scenario) {
+
+  // Сценарий несёт свой companyId, и раньше он попадал в базу как есть: любой
+  // вошедший мог записать звонок в чужую компанию, просто указав её сценарий.
+  // Теперь чужой сценарий неотличим от несуществующего — по коду ответа нельзя
+  // выяснить, какие компании есть в системе.
+  if (!scenario || scenario.companyId !== ctx.companyId) {
+    await writeAudit({
+      companyId: ctx.companyId,
+      actor: ctx.email,
+      action: "demo.run",
+      targetType: "scenario",
+      targetId: body.scenarioId,
+      outcome: "denied",
+      detail: { reason: scenario ? "scenario_of_other_company" : "scenario_not_found" },
+    })
     return NextResponse.json({ error: "Сценарий не найден" }, { status: 404 })
   }
 
@@ -25,6 +40,16 @@ export async function POST(request: Request) {
   const runId = `live-${Date.now()}`
   const result = runScenario(scenario, new Date(), runId)
   await persistRun(result)
+
+  await writeAudit({
+    companyId: ctx.companyId,
+    actor: ctx.email,
+    action: "demo.run",
+    targetType: "call",
+    targetId: result.call.callId,
+    outcome: "ok",
+    detail: { scenarioId: scenario.id, runId },
+  })
 
   return NextResponse.json({
     callId: result.call.callId,

@@ -1,7 +1,10 @@
 "use server"
 
 import { randomUUID } from "node:crypto"
+import { headers } from "next/headers"
 import { and, eq, isNull, or, sql } from "drizzle-orm"
+import { clientIp } from "@/lib/auth-throttle"
+import { signUpLimiter } from "@/lib/voice/rate-limit"
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
 import { voiceCompanyMembers, voiceInvites } from "@/lib/db/schema"
@@ -27,6 +30,18 @@ export async function signUpWithInvite(input: {
 
   if (!name || !email || !input.password || !code) {
     return { ok: false, error: "Заполните все поля." }
+  }
+
+  // Код приглашения открывает доступ к звонкам компании, поэтому его нельзя
+  // давать перебирать со скоростью ответа сервера. Лимит считается по адресу
+  // клиента: почту в каждой попытке можно менять, адрес — заметно сложнее.
+  const ip = clientIp(await headers())
+  const attempt = signUpLimiter.check(ip)
+  if (!attempt.allowed) {
+    return {
+      ok: false,
+      error: `Слишком много попыток регистрации. Повторите через ${Math.ceil(attempt.retryAfterSec / 60)} мин.`,
+    }
   }
 
   // Слот приглашения занимается одним атомарным UPDATE. Проверка «сначала

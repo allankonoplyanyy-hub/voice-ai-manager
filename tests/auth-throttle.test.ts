@@ -37,6 +37,44 @@ describe("определение адреса клиента", () => {
   })
 })
 
+describe("публичная регистрация закрыта", () => {
+  /**
+   * Точка /api/auth/sign-up/email создавала аккаунт по почте и паролю, минуя
+   * код приглашения: проверка кода живёт в серверном действии. Дыра
+   * подтверждалась на живом приложении — пять аккаунтов с заведомо неверным
+   * кодом были созданы подряд.
+   */
+  it("КРИТИЧНО: маршрут отклоняет прямые запросы регистрации", async () => {
+    const { readFile } = await import("node:fs/promises")
+    const source = await readFile("app/api/auth/[...all]/route.ts", "utf8")
+
+    const guard = source.slice(source.indexOf('kind === "sign-up"'))
+    expect(guard).toContain("404")
+    // Ответ не должен доходить до обработчика Better Auth.
+    expect(guard.slice(0, 300)).not.toContain("handler.POST")
+  })
+
+  it("серверное действие ограничивает перебор кодов приглашения", async () => {
+    const { readFile } = await import("node:fs/promises")
+    const source = await readFile("app/sign-up/actions.ts", "utf8")
+
+    expect(source).toContain("signUpLimiter.check")
+    // Лимит обязан стоять до занятия слота приглашения, иначе перебор успевает
+    // израсходовать чужие приглашения.
+    expect(source.indexOf("signUpLimiter.check")).toBeLessThan(source.indexOf(".update(voiceInvites)"))
+  })
+
+  it("успешная регистрация расходует лимит, а успешный вход — нет", async () => {
+    const { readFile } = await import("node:fs/promises")
+    const source = await readFile("app/api/auth/[...all]/route.ts", "utf8")
+
+    // Возврат токена только для входа: иначе счётчик регистраций не
+    // исчерпывался бы никогда.
+    expect(source).toMatch(/refundAuthAttempt/)
+    expect(source).toMatch(/kind === "sign-in"/)
+  })
+})
+
 describe("отнесение запроса к попытке входа", () => {
   it("узнаёт вход и регистрацию", () => {
     expect(classifyAuthRequest("POST", "/api/auth/sign-in/email")).toBe("sign-in")

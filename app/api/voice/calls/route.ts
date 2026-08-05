@@ -4,6 +4,7 @@ import { runScenario } from "@/lib/voice/engine"
 import { TurnTimer, checkBudgets } from "@/lib/voice/latency"
 import { ensureCompanies, ensureSeeded, listCallsByCompany, persistRun } from "@/lib/voice/persist"
 import { safeLog } from "@/lib/voice/redaction"
+import { writeAudit } from "@/lib/voice/repo"
 import { effectiveMode } from "@/lib/voice/runtime"
 import { getScenario } from "@/lib/voice/scenarios"
 
@@ -17,7 +18,7 @@ export async function GET() {
 
 // Запуск demo-звонка по сценарию. Внешние API не вызываются.
 export async function POST(request: Request) {
-  const { response } = await authenticateRequest()
+  const { ctx, response } = await authenticateRequest()
   if (response) return response
 
   const body = await request.json().catch(() => null)
@@ -26,7 +27,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "scenarioId обязателен" }, { status: 400 })
   }
   const scenario = getScenario(scenarioId)
-  if (!scenario) {
+
+  // Сценарий несёт собственный companyId, и он попадал в базу как есть. Без
+  // сверки с сессией любой вошедший мог записать звонок в чужую компанию,
+  // просто указав её сценарий. Чужой сценарий отвечает так же, как
+  // несуществующий: иначе по коду ответа можно было бы перечислить компании.
+  if (!scenario || scenario.companyId !== ctx.companyId) {
+    await writeAudit({
+      companyId: ctx.companyId,
+      actor: ctx.email,
+      action: "call.create",
+      targetType: "scenario",
+      targetId: scenarioId,
+      outcome: "denied",
+      detail: { reason: scenario ? "scenario_of_other_company" : "scenario_not_found" },
+    })
     return NextResponse.json({ error: "Сценарий не найден" }, { status: 404 })
   }
 
@@ -66,6 +81,16 @@ export async function POST(request: Request) {
       violations: violations.map((v) => `${v.stage}:+${v.overByMs}ms`),
     })
   }
+
+  await writeAudit({
+    companyId: ctx.companyId,
+    actor: ctx.email,
+    action: "call.create",
+    targetType: "call",
+    targetId: result.call.callId,
+    outcome: "ok",
+    detail: { scenarioId: scenario.id, runId, mode },
+  })
 
   return NextResponse.json(
     {
